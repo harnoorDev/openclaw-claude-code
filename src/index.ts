@@ -51,7 +51,7 @@ const program = new Command();
 program
   .name('claude-code-skill')
   .description('Control Claude Code via MCP protocol')
-  .version('1.0.0');
+  .version('1.1.0');
 
 // Connect command
 program
@@ -319,6 +319,7 @@ program
   .option('--agent <name>', 'Default agent to use')
   .option('--session-id <uuid>', 'Use a specific session ID (must be valid UUID)')
   .option('--add-dir <dirs>', 'Additional directories to allow tool access (comma-separated)')
+  .option('--effort <level>', 'Effort level: low, medium, high, max, auto (default: auto)')
   .action(async (name: string | undefined, options: {
     cwd?: string;
     resume?: string;
@@ -338,6 +339,7 @@ program
     agent?: string;
     sessionId?: string;
     addDir?: string;
+    effort?: string;
   }) => {
     const sessionName = name || `session-${Date.now()}`;
     console.log(`Starting persistent session: ${sessionName}...`);
@@ -394,6 +396,14 @@ program
     if (options.addDir) {
       body.addDir = options.addDir.split(',').map(d => d.trim());
     }
+    if (options.effort) {
+      const valid = ['low', 'medium', 'high', 'max', 'auto'];
+      if (!valid.includes(options.effort)) {
+        console.error(`Invalid effort level: ${options.effort}. Must be one of: ${valid.join(', ')}`);
+        process.exit(1);
+      }
+      body.effort = options.effort;
+    }
 
     const result = await apiCall('/session/start', 'POST', body);
 
@@ -411,6 +421,7 @@ program
       if (options.tools) console.log(`Available tools: ${options.tools}`);
       if (options.maxTurns) console.log(`Max turns: ${options.maxTurns}`);
       if (options.maxBudget) console.log(`Max budget: $${options.maxBudget}`);
+      if (options.effort) console.log(`Effort: ${options.effort}`);
       if (options.forkSession) console.log(`Fork mode: enabled`);
     } else {
       console.error(`Failed: ${result.error}`);
@@ -424,10 +435,18 @@ program
   .option('-t, --timeout <ms>', 'Timeout in milliseconds', '600000')
   .option('-s, --stream', 'Stream output in real-time')
   .option('--ndjson', 'Output NDJSON (one JSON per line) when streaming')
-  .action(async (name: string, message: string, options: { timeout: string; stream?: boolean; ndjson?: boolean }) => {
+  .option('--effort <level>', 'Effort level for this message: low, medium, high, max')
+  .option('--ultrathink', 'Enable high effort (ultrathink) for this message')
+  .option('--plan', 'Enter plan mode — Claude creates a plan before executing')
+  .option('--auto-resume', 'Automatically resume the session if it was stopped')
+  .action(async (name: string, message: string, options: { timeout: string; stream?: boolean; ndjson?: boolean; effort?: string; ultrathink?: boolean; plan?: boolean; autoResume?: boolean }) => {
     if (!options.ndjson) {
       console.log(`Sending to session '${name}'...`);
     }
+
+    // Effort handling: --ultrathink is shorthand for --effort high
+    let effort = options.effort;
+    if (options.ultrathink) effort = 'high';
 
     const timeoutMs = parseInt(options.timeout);
 
@@ -440,7 +459,7 @@ program
         const response = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name, message, timeout: timeoutMs }),
+          body: JSON.stringify({ name, message, timeout: timeoutMs, ...(effort && { effort }), ...(options.plan && { plan: true }), ...(options.autoResume && { autoResume: true }) }),
           signal: controller.signal,
         });
 
@@ -502,7 +521,10 @@ program
       const result = await apiCall('/session/send', 'POST', {
         name,
         message,
-        timeout: timeoutMs
+        timeout: timeoutMs,
+        ...(effort && { effort }),
+        ...(options.plan && { plan: true }),
+        ...(options.autoResume && { autoResume: true }),
       }, timeoutMs + 30_000); // extra 30s grace for HTTP overhead
 
       if (result.ok) {
@@ -733,6 +755,85 @@ program
         }
         console.log('');
       }
+    } else {
+      console.error(`Failed: ${result.error}`);
+    }
+  });
+
+// Compact a session (reduce context usage)
+program
+  .command('session-compact <name>')
+  .description('Compact a session to reduce context window usage')
+  .option('--summary <text>', 'Custom summary to use for compaction (otherwise auto-generated)')
+  .action(async (name: string, options: { summary?: string }) => {
+    console.log(`Compacting session '${name}'...`);
+    const body: Record<string, unknown> = { name };
+    if (options.summary) body.summary = options.summary;
+    const result = await apiCall('/session/compact', 'POST', body);
+    if (result.ok) {
+      console.log(`Session '${name}' compacted.`);
+      if (result.tokensBefore && result.tokensAfter) {
+        console.log(`  Tokens: ${result.tokensBefore} → ${result.tokensAfter} (saved ${(result.tokensBefore as number) - (result.tokensAfter as number)})`);
+      }
+    } else {
+      console.error(`Failed: ${result.error}`);
+    }
+  });
+
+// Get context usage info
+program
+  .command('session-context <name>')
+  .description('Show context window usage and optimization tips')
+  .action(async (name: string) => {
+    const result = await apiCall('/session/context', 'POST', { name });
+    if (result.ok) {
+      console.log(`Session '${name}' context usage:\n`);
+      const ctx = result.context as {
+        tokensUsed?: number;
+        tokensMax?: number;
+        percentUsed?: number;
+        suggestions?: string[];
+      };
+      console.log(`  Tokens used: ${ctx.tokensUsed || 'N/A'}`);
+      console.log(`  Tokens max:  ${ctx.tokensMax || 'N/A'}`);
+      if (ctx.percentUsed) console.log(`  Usage: ${ctx.percentUsed.toFixed(1)}%`);
+      if (ctx.suggestions && ctx.suggestions.length > 0) {
+        console.log('\n  Optimization tips:');
+        for (const tip of ctx.suggestions) {
+          console.log(`    - ${tip}`);
+        }
+      }
+    } else {
+      console.error(`Failed: ${result.error}`);
+    }
+  });
+
+// Switch model mid-session
+program
+  .command('session-model <name> <model>')
+  .description('Switch model for an active session (e.g. opus, sonnet, gemini-pro)')
+  .action(async (name: string, model: string) => {
+    const result = await apiCall('/session/model', 'POST', { name, model });
+    if (result.ok) {
+      console.log(`Session '${name}' model switched to: ${result.model || model}`);
+    } else {
+      console.error(`Failed: ${result.error}`);
+    }
+  });
+
+// Set effort level for a session
+program
+  .command('session-effort <name> <level>')
+  .description('Set effort level for an active session (low, medium, high, max, auto)')
+  .action(async (name: string, level: string) => {
+    const valid = ['low', 'medium', 'high', 'max', 'auto'];
+    if (!valid.includes(level)) {
+      console.error(`Invalid effort level: ${level}. Must be one of: ${valid.join(', ')}`);
+      process.exit(1);
+    }
+    const result = await apiCall('/session/effort', 'POST', { name, effort: level });
+    if (result.ok) {
+      console.log(`Session '${name}' effort set to: ${level}`);
     } else {
       console.error(`Failed: ${result.error}`);
     }

@@ -39,8 +39,20 @@ claude-code-skill session-start myproject -d ~/project \
 # Send a plan (Claude will execute precisely)
 claude-code-skill session-send myproject --stream '<精确的执行计划>'
 
+# Send with high effort (ultrathink) for complex reasoning
+claude-code-skill session-send myproject --stream --ultrathink 'Refactor the auth module'
+
+# Enter plan mode — Claude creates a plan first, then executes
+claude-code-skill session-send myproject --stream --plan 'Implement rate limiting'
+
 # Check progress
 claude-code-skill session-status myproject
+
+# Compact session when context gets large
+claude-code-skill session-compact myproject
+
+# Switch model mid-session
+claude-code-skill session-model myproject opus
 ```
 
 ## 🎯 When to Use This Skill
@@ -134,6 +146,19 @@ claude-code-skill session-send myproject "Refactor this module" --stream
 
 # With custom timeout
 claude-code-skill session-send myproject "Run all tests" -t 300000
+
+# With effort control
+claude-code-skill session-send myproject "Quick lint fix" --effort low
+claude-code-skill session-send myproject "Design new auth system" --ultrathink
+
+# Plan mode — Claude creates a plan, then executes
+claude-code-skill session-send myproject --plan "Add rate limiting to all API endpoints"
+
+# Auto-resume stopped sessions
+claude-code-skill session-send myproject "Continue the migration" --auto-resume
+
+# NDJSON output for programmatic consumption
+claude-code-skill session-send myproject "Run tests" --stream --ndjson
 ```
 
 #### Managing Sessions
@@ -160,6 +185,38 @@ claude-code-skill session-stop myproject
 
 # Restart a failed session
 claude-code-skill session-restart myproject
+```
+
+#### Effort & Model Control
+
+```bash
+# Set effort level for a session (persists across messages)
+claude-code-skill session-effort myproject low      # Fast, minimal thinking
+claude-code-skill session-effort myproject medium   # Balanced (default for Opus 4.6)
+claude-code-skill session-effort myproject high     # Deep thinking
+claude-code-skill session-effort myproject max      # Maximum capability, no token limit (Opus 4.6 only)
+claude-code-skill session-effort myproject auto     # Reset to default
+
+# Switch model mid-session
+claude-code-skill session-model myproject opus
+claude-code-skill session-model myproject sonnet
+claude-code-skill session-model myproject gemini-pro
+
+# Start session with effort preset
+claude-code-skill session-start myproject -d ~/project --effort high
+```
+
+#### Context Management
+
+```bash
+# Compact session to reclaim context window
+claude-code-skill session-compact myproject
+
+# Compact with custom summary
+claude-code-skill session-compact myproject --summary "Finished auth refactor, now on tests"
+
+# Check context usage
+claude-code-skill session-context myproject
 ```
 
 ### Session History & Search

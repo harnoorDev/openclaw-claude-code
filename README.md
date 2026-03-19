@@ -1,134 +1,221 @@
 # Claude Code Skill 🤖
 
-Control Claude Code via MCP (Model Context Protocol). This CLI provides programmatic access to Claude Code's full capabilities including persistent sessions, agent teams, and advanced tool control.
+Control Claude Code via MCP (Model Context Protocol). This CLI provides **agent-level** programmatic access to Claude Code — persistent sessions, effort control, context management, model switching, and agent teams.
+
+Built for [OpenClaw](https://github.com/openclaw/openclaw) agents that need to drive Claude Code as a coding backend.
+
+## What's New in v1.1 🚀
+
+- **Effort Control** — `--effort low/medium/high/max` at session and per-message level
+- **Ultrathink** — `--ultrathink` flag for deep reasoning on complex tasks
+- **Plan Mode** — `--plan` flag to have Claude create a plan before executing
+- **Context Management** — `session-compact` to reclaim context, `session-context` to inspect usage
+- **Model Switching** — `session-model` to switch models mid-session (with auto-resume)
+- **Auto-Resume** — `--auto-resume` to restart stopped sessions transparently
+- **NDJSON Streaming** — `--ndjson` for machine-readable streaming output
+- **API Timeout Control** — configurable per-request timeouts with AbortController
 
 ## Features
 
-- 🔌 **MCP Protocol** - Direct access to all Claude Code tools
-- 💾 **Persistent Sessions** - Maintain context across multiple interactions
-- 🤝 **Agent Teams** - Deploy multiple specialized agents
-- 🔧 **Tool Control** - Fine-grained control over which tools are available
-- 📊 **Budget Limits** - Set spending caps on API usage
-- 🔄 **Session Management** - Fork, pause, resume, search sessions
+- 🔌 **MCP Protocol** — Direct access to all Claude Code tools
+- 💾 **Persistent Sessions** — Maintain context across multiple interactions
+- 🧠 **Effort Control** — low/medium/high/max effort levels + ultrathink
+- 📋 **Plan Mode** — Claude creates a plan before executing
+- 🔄 **Context Management** — Compact sessions, inspect token usage
+- 🤝 **Agent Teams** — Deploy multiple specialized agents
+- 🔧 **Tool Control** — Fine-grained control over which tools are available
+- 📊 **Budget Limits** — Set spending caps on API usage
+- 🌐 **Multi-Model** — Use any model via proxy (Gemini, GPT, etc.)
+- 📡 **Streaming** — Real-time SSE streaming with NDJSON support
 
 ## Installation
 
 ```bash
-# Clone
 git clone https://github.com/Enderfga/openclaw-claude-code-skill.git
 cd openclaw-claude-code-skill
-
-# Install dependencies
 npm install
-
-# Build
 npm run build
-
-# Link globally (optional)
-npm link
+npm link  # optional: make CLI globally available
 ```
 
 ## Requirements
 
 - Node.js 18+
 - Backend API server running (see Configuration)
-- Claude Code CLI (for the backend)
-
-## Multi-Model Support (Proxy) 🌐
-
-Use `--base-url` to route requests through a custom API endpoint, enabling **any OpenAI-compatible model** to power Claude Code:
-
-```bash
-# Use Gemini via claude-code-proxy
-claude-code-skill session-start gemini-task -d ~/project \
-  --model gemini-2.0-flash \
-  --base-url http://127.0.0.1:8082
-
-# Use GPT-4o via OpenAI-compatible endpoint
-claude-code-skill session-start gpt-task -d ~/project \
-  --model gpt-4o \
-  --base-url https://api.openai.com/v1
-
-# Use any OpenRouter model
-claude-code-skill session-start mixtral-task -d ~/project \
-  --model mistral/mixtral-8x7b \
-  --base-url https://openrouter.ai/api/v1
-```
-
-This unlocks the full Claude Code agent loop (persistent sessions, tool use, multi-turn) with any model backend.
-
-## Quick Start
-
-```bash
-# Start a persistent session
-claude-code-skill session-start myproject -d ~/project \
-  --permission-mode plan \
-  --allowed-tools "Bash,Read,Edit,Write,Glob,Grep"
-
-# Send a task
-claude-code-skill session-send myproject "Find all TODO comments and fix them" --stream
-
-# Check status
-claude-code-skill session-status myproject
-
-# Stop when done
-claude-code-skill session-stop myproject
-```
+- Claude Code CLI installed
 
 ## Configuration
-
-The CLI connects to a backend API server. Set the URL via environment variable:
 
 ```bash
 # Default: http://127.0.0.1:18795
 export BACKEND_API_URL="http://your-server:port"
-# Alias also supported:
-export CLAUDE_CODE_API_URL="http://your-server:port"
 ```
 
-## Basic Commands
+## Quick Start
 
 ```bash
-# Connection
+# Start a session with high effort
+claude-code-skill session-start myproject -d ~/project \
+  --permission-mode acceptEdits \
+  --allowed-tools "Bash,Read,Edit,Write,Glob,Grep" \
+  --effort high
+
+# Send a task with streaming
+claude-code-skill session-send myproject "Refactor the auth module" --stream
+
+# Need deep reasoning? Use ultrathink
+claude-code-skill session-send myproject "Design a new caching layer" --stream --ultrathink
+
+# Want a plan first?
+claude-code-skill session-send myproject "Add rate limiting" --stream --plan
+
+# Running low on context? Compact it
+claude-code-skill session-compact myproject
+
+# Check context usage
+claude-code-skill session-context myproject
+
+# Switch model mid-session
+claude-code-skill session-model myproject sonnet
+
+# Change effort level
+claude-code-skill session-effort myproject max
+
+# Done
+claude-code-skill session-stop myproject
+```
+
+## Command Reference
+
+### Connection & Tools
+
+```bash
 claude-code-skill connect          # Connect to MCP server
 claude-code-skill disconnect       # Disconnect
 claude-code-skill status           # Check connection status
 claude-code-skill tools            # List available tools
+```
 
-# Direct tool calls
+### Direct Tool Calls
+
+```bash
 claude-code-skill bash "npm test"
 claude-code-skill read /path/to/file.ts
 claude-code-skill glob "**/*.ts" -p ~/project
 claude-code-skill grep "TODO" -p ~/project -c
 claude-code-skill call Write -a '{"file_path":"/tmp/test.txt","content":"Hello"}'
+claude-code-skill batch-read "src/**/*.ts" "tests/**/*.test.ts" -p ~/project
 ```
 
-## Persistent Sessions
+### Persistent Sessions
 
-### Start a Session
+#### Starting Sessions
 
 ```bash
 # Basic
 claude-code-skill session-start myproject -d ~/project
 
-# With custom model and API endpoint (proxy support)
+# With effort and model
+claude-code-skill session-start myproject -d ~/project \
+  --model claude-opus-4-5 \
+  --effort high
+
+# With proxy (multi-model support)
 claude-code-skill session-start gemini-dev -d ~/project \
   --model gemini-2.0-flash \
   --base-url http://127.0.0.1:8082
 
-# With full options
+# Full options
 claude-code-skill session-start advanced -d ~/project \
-  --model claude-opus-4-5 \
   --permission-mode plan \
   --allowed-tools "Bash,Read,Edit,Write" \
-  --max-budget 2.00 \
-  --append-system-prompt "Always write tests"
+  --disallowed-tools "Task" \
+  --max-budget 5.00 \
+  --effort high \
+  --append-system-prompt "Always write tests" \
+  --add-dir "/tmp,/var/log"
 ```
 
-| Option | Description |
-|--------|-------------|
-| `-m, --model <model>` | Model to use (e.g., `claude-opus-4-5`, `gemini-2.0-flash`) |
-| `-b, --base-url <url>` | Custom API endpoint for proxy/alternative backends |
+#### Sending Messages
+
+```bash
+# Basic (blocks until complete)
+claude-code-skill session-send myproject "Write unit tests"
+
+# Streaming
+claude-code-skill session-send myproject "Refactor this" --stream
+
+# With effort override (per-message)
+claude-code-skill session-send myproject "Quick fix" --effort low
+claude-code-skill session-send myproject "Complex redesign" --effort max
+
+# Ultrathink (shorthand for --effort high)
+claude-code-skill session-send myproject "Analyze this architecture" --ultrathink
+
+# Plan mode
+claude-code-skill session-send myproject "Add caching" --plan
+
+# Auto-resume stopped sessions
+claude-code-skill session-send myproject "Continue" --auto-resume
+
+# NDJSON output (for programmatic consumption)
+claude-code-skill session-send myproject "Run tests" --stream --ndjson
+
+# Custom timeout
+claude-code-skill session-send myproject "Long task" -t 900000
+```
+
+#### Effort & Model Control
+
+```bash
+# Set effort level (persists across messages)
+claude-code-skill session-effort myproject low      # Minimal thinking
+claude-code-skill session-effort myproject medium   # Balanced (Opus 4.6 default)
+claude-code-skill session-effort myproject high     # Deep thinking
+claude-code-skill session-effort myproject max      # Maximum, no token limit (Opus 4.6 only)
+claude-code-skill session-effort myproject auto     # Reset to default
+
+# Switch model mid-session
+claude-code-skill session-model myproject opus
+claude-code-skill session-model myproject sonnet
+```
+
+#### Context Management
+
+```bash
+# Compact session to reclaim context window
+claude-code-skill session-compact myproject
+
+# Compact with custom summary
+claude-code-skill session-compact myproject --summary "Finished auth, now on tests"
+
+# Check context usage
+claude-code-skill session-context myproject
+# → Tokens used: 45231, Usage: 22.6%, Suggestions: [...]
+```
+
+#### Session Management
+
+```bash
+claude-code-skill session-list                    # List active sessions
+claude-code-skill session-status myproject        # Detailed status
+claude-code-skill session-history myproject -n 50 # View history
+claude-code-skill session-pause myproject         # Pause
+claude-code-skill session-resume-paused myproject # Resume
+claude-code-skill session-fork myproject exp      # Fork session
+claude-code-skill session-restart myproject       # Restart failed session
+claude-code-skill session-stop myproject          # Stop
+```
+
+### Session Search
+
+```bash
+claude-code-skill sessions -n 20              # List recent sessions
+claude-code-skill session-search "bug fix"    # Search by query
+claude-code-skill session-search --project ~/myapp
+claude-code-skill session-search --since "2h"
+claude-code-skill resume <session-id> "Continue" -d ~/project
+```
 
 ### Permission Modes
 
@@ -138,25 +225,38 @@ claude-code-skill session-start advanced -d ~/project \
 | `plan` | Preview changes before applying |
 | `default` | Ask for each operation |
 | `bypassPermissions` | Skip all prompts (dangerous!) |
+| `delegate` | Delegate decisions to parent |
+| `dontAsk` | Never ask, reject by default |
 
-### Session Management
+### Effort Levels
+
+| Level | Symbol | Description | Best For |
+|-------|--------|-------------|----------|
+| `low` | ○ | Minimal thinking, fast | Simple fixes, lint, formatting |
+| `medium` | ◐ | Balanced (Opus 4.6 default) | Most coding tasks |
+| `high` | ● | Deep thinking | Architecture, complex refactors |
+| `max` | ◉ | Maximum capability, no token limit | Opus 4.6 only. Hardest problems |
+| `auto` | | Reset to model default | — |
+
+## Multi-Model Support 🌐
+
+Route requests through any OpenAI-compatible proxy:
 
 ```bash
-claude-code-skill session-list                    # List active sessions
-claude-code-skill session-send myproject "task"   # Send message
-claude-code-skill session-send myproject "task" --stream  # With streaming
-claude-code-skill session-status myproject        # Get status
-claude-code-skill session-history myproject -n 50 # View history
-claude-code-skill session-pause myproject         # Pause session
-claude-code-skill session-resume-paused myproject # Resume session
-claude-code-skill session-fork myproject exp      # Fork session
-claude-code-skill session-stop myproject          # Stop session
-claude-code-skill session-restart myproject       # Restart failed session
+# Gemini via proxy
+claude-code-skill session-start gemini-task -d ~/project \
+  --model gemini-2.0-flash \
+  --base-url http://127.0.0.1:8082
+
+# GPT via OpenAI endpoint
+claude-code-skill session-start gpt-task -d ~/project \
+  --model gpt-4o \
+  --base-url https://api.openai.com/v1
 ```
 
-## Agent Teams
+This unlocks the full Claude Code agent loop with any model backend.
 
-Deploy multiple specialized agents:
+## Agent Teams
 
 ```bash
 claude-code-skill session-start team -d ~/project \
@@ -167,81 +267,63 @@ claude-code-skill session-start team -d ~/project \
   }' \
   --agent architect
 
-# Switch agents with @mention
 claude-code-skill session-send team "@developer implement the design"
 claude-code-skill session-send team "@reviewer review the implementation"
 ```
 
-## Tool Control
+## NDJSON Streaming Format
 
-```bash
-# Allow specific tools
---allowed-tools "Bash(git:*,npm:*),Read,Edit"
+With `--stream --ndjson`, each line is a JSON object:
 
-# Deny dangerous operations
---disallowed-tools "Bash(rm:*,sudo:*),Write(/etc/*)"
-
-# Limit available tools
---tools "Read,Glob,Grep"
+```jsonl
+{"type":"text","text":"Let me "}
+{"type":"text","text":"analyze this..."}
+{"type":"tool_use","tool":"Bash","input":"npm test"}
+{"type":"tool_result"}
+{"type":"text","text":"All tests pass."}
+{"type":"done","text":"All tests pass.","stop_reason":"end_turn"}
 ```
 
-## Session Search
+## Roadmap
 
-```bash
-claude-code-skill sessions -n 20              # List recent sessions
-claude-code-skill session-search "bug fix"    # Search by query
-claude-code-skill session-search --project ~/myapp  # Filter by project
-claude-code-skill session-search --since "2h" # Filter by time
-claude-code-skill resume <session-id> "Continue" -d ~/project  # Resume
-```
+### ✅ Completed (v1.1)
+- [x] Effort control (low/medium/high/max/auto)
+- [x] Ultrathink keyword support
+- [x] Plan mode (`--plan`)
+- [x] Session compaction (`session-compact`)
+- [x] Context usage inspection (`session-context`)
+- [x] Model switching mid-session (`session-model`)
+- [x] Effort switching mid-session (`session-effort`)
+- [x] Auto-resume stopped sessions (`--auto-resume`)
+- [x] NDJSON streaming output
+- [x] Configurable API timeouts with AbortController
+- [x] Session fork/branch support
 
-## Batch Operations
+### 🔜 Planned (v1.2+)
+- [ ] Hook system integration (PreToolUse, PostToolUse, StopFailure callbacks)
+- [ ] MCP elicitation support (structured input mid-task)
+- [ ] Worktree support (`--worktree` for parallel branches)
+- [ ] `session-branch` command (fork + switch in one step)
+- [ ] Plugin-shipped agent frontmatter (effort, maxTurns, disallowedTools)
+- [ ] `modelOverrides` setting for custom provider model IDs
+- [ ] Session cost tracking and reporting
 
-```bash
-# Read multiple files
-claude-code-skill batch-read "src/**/*.ts" "tests/**/*.test.ts" -p ~/project
-```
-
-## Examples
-
-### Code Review
-
-```bash
-claude-code-skill session-start review -d ~/project --permission-mode plan
-claude-code-skill session-send review "Review all TypeScript files for security issues" --stream
-```
-
-### Automated Testing
-
-```bash
-claude-code-skill session-start test -d ~/project \
-  --allowed-tools "Bash(npm:*),Read,Write" \
-  --max-budget 1.00
-
-claude-code-skill session-send test "Find untested functions and write tests"
-```
-
-### Multi-Agent Debugging
-
-```bash
-claude-code-skill session-start debug -d ~/project \
-  --agents '{
-    "detective": {"prompt": "Find root cause"},
-    "fixer": {"prompt": "Implement fixes"},
-    "tester": {"prompt": "Verify fixes"}
-  }' \
-  --agent detective
-
-claude-code-skill session-send debug "Memory leak in API server" --stream
-```
+### 🚫 Not Planned
+- Voice mode (human-only, not useful for agents)
+- Remote Control / browser bridging (agent doesn't need UI)
+- `/loop` / cron (use OpenClaw's native cron instead)
+- VS Code extension features (agent runs headless)
+- Color/theme customization (CLI output only)
 
 ## Best Practices
 
-1. **Use persistent sessions** for multi-step tasks
-2. **Enable streaming** (`--stream`) for long operations
-3. **Set budget limits** (`--max-budget`) for safety
-4. **Use plan mode** (`--permission-mode plan`) for critical changes
-5. **Fork before experiments** to preserve the original session
+1. **Use `--effort` wisely** — `low` for simple tasks, `high`/`max` for complex ones
+2. **Compact regularly** — run `session-compact` when context gets large
+3. **Set budget limits** — `--max-budget` prevents runaway costs
+4. **Use plan mode** for critical changes — `--plan` shows what Claude will do first
+5. **Stream everything** — `--stream` gives real-time feedback
+6. **NDJSON for automation** — `--ndjson` when parsing output programmatically
+7. **Fork before experiments** — `session-fork` preserves the original session
 
 ## License
 
