@@ -44,9 +44,26 @@ Built for [OpenClaw](https://github.com/openclaw/openclaw) agents that need to d
 
 ## Installation
 
+This repo has two parts: the **CLI skill** (this directory) and the **backend server** (`backend/`).
+
+### 1. Start the backend
+
+The backend wraps the Claude Code CLI into an HTTP API that the skill talks to.
+
 ```bash
-git clone https://github.com/Enderfga/openclaw-claude-code-skill.git
-cd openclaw-claude-code-skill
+cd backend
+npm install
+npm run build
+export ANTHROPIC_API_KEY="sk-ant-..."
+./start.sh --daemon   # runs on http://127.0.0.1:18795
+```
+
+See [`backend/README.md`](backend/README.md) for full backend docs.
+
+### 2. Install the CLI skill
+
+```bash
+# From repo root
 npm install
 npm run build
 npm link  # optional: make CLI globally available
@@ -55,8 +72,8 @@ npm link  # optional: make CLI globally available
 ## Requirements
 
 - Node.js 18+
-- Backend API server running (see Configuration)
-- Claude Code CLI installed
+- [Claude Code CLI](https://github.com/anthropics/claude-code) installed (`claude` on `$PATH`)
+- Backend server running (see above)
 
 ## Configuration
 
