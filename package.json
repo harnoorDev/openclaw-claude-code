@@ -9,9 +9,9 @@
     "claude-code-skill": "./dist/bin/cli.js"
   },
   "openclaw": {
-    "extensions": {
-      "plugin": "./dist/src/index.js"
-    }
+    "extensions": [
+      "./dist/src/index.js"
+    ]
   },
   "files": [
     "dist/",

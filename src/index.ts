@@ -21,42 +21,47 @@ export * from './types.js';
 
 /** OpenClaw Plugin SDK interface (minimal typing for what we use) */
 interface PluginAPI {
+  pluginConfig: Record<string, unknown>;
+  logger: { info(...args: unknown[]): void; error(...args: unknown[]): void; warn(...args: unknown[]): void };
   registerTool(def: {
     name: string;
+    label?: string;
     description: string;
     parameters: Record<string, unknown>;
-    execute: (args: Record<string, unknown>) => Promise<unknown>;
+    execute: (toolCallId: string, params: Record<string, unknown>) => Promise<unknown>;
   }): void;
-  registerHook(event: string, handler: (event: Record<string, unknown>) => Promise<Record<string, unknown>>): void;
+  on(event: string, handler: (event: Record<string, unknown>, ctx?: unknown) => Promise<void>): void;
   registerHttpRoute(def: {
     path: string;
     auth?: string;
     match?: string;
     handler: (req: unknown, res: unknown) => Promise<boolean>;
   }): void;
-  getConfig(): Record<string, unknown>;
-  onShutdown(fn: () => Promise<void>): void;
+  registerService(def: { id: string; start: () => void; stop: () => void }): void;
 }
 
 /**
- * Plugin entry — called by OpenClaw when the plugin is loaded
+ * OpenClaw plugin object — standard format
  */
-export function definePluginEntry(api: PluginAPI): void {
-  const rawConfig = api.getConfig() as Partial<PluginConfig>;
+const plugin = {
+  id: 'openclaw-claude-code',
+  name: 'Claude Code SDK',
+  description: 'Full-featured Claude Code integration — session management, agent teams, worktree isolation, multi-model proxy',
+
+  register(api: PluginAPI): void {
+    const rawConfig = (api.pluginConfig || {}) as Partial<PluginConfig>;
   const manager = new SessionManager(rawConfig);
 
   // Start embedded HTTP server for CLI access
   const server = new EmbeddedServer(manager);
-  server.start().catch(err => console.error('[plugin] Embedded server failed:', err));
+  server.start().catch(err => api.logger.error('[plugin] Embedded server failed:', err));
 
-  // Graceful shutdown
-  api.onShutdown(async () => {
-    await server.stop();
-    await manager.shutdown();
+  // Service lifecycle
+  api.registerService({
+    id: 'openclaw-claude-code',
+    start: () => api.logger.info('openclaw-claude-code: plugin loaded'),
+    stop: () => { server.stop().catch(() => {}); manager.shutdown().catch(() => {}); },
   });
-
-  // Register hooks
-  registerPromptBypass(api);
 
   // Register proxy HTTP route (multi-model support)
   if (rawConfig.proxy?.enabled !== false) {
@@ -108,7 +113,7 @@ export function definePluginEntry(api: PluginAPI): void {
         enableAutoMode:         { type: 'boolean', description: 'Enable auto permission mode' },
       },
     },
-    execute: async (args) => {
+    execute: async (_id, args) => {
       const info = await manager.startSession(args as Parameters<SessionManager['startSession']>[0]);
       return { ok: true, ...info };
     },
@@ -130,7 +135,7 @@ export function definePluginEntry(api: PluginAPI): void {
       },
       required: ['name', 'message'],
     },
-    execute: async (args) => {
+    execute: async (_id, args) => {
       const result = await manager.sendMessage(
         args.name as string,
         args.message as string,
@@ -154,7 +159,7 @@ export function definePluginEntry(api: PluginAPI): void {
       properties: { name: { type: 'string', description: 'Session name' } },
       required: ['name'],
     },
-    execute: async (args) => {
+    execute: async (_id, args) => {
       await manager.stopSession(args.name as string);
       return { ok: true };
     },
@@ -166,7 +171,7 @@ export function definePluginEntry(api: PluginAPI): void {
     name: 'claude_session_list',
     description: 'List all active Claude Code sessions',
     parameters: { type: 'object', properties: {} },
-    execute: async () => {
+    execute: async (_id) => {
       return { ok: true, sessions: manager.listSessions() };
     },
   });
@@ -181,7 +186,7 @@ export function definePluginEntry(api: PluginAPI): void {
       properties: { name: { type: 'string', description: 'Session name' } },
       required: ['name'],
     },
-    execute: async (args) => {
+    execute: async (_id, args) => {
       const status = manager.getStatus(args.name as string);
       return { ok: true, ...status };
     },
@@ -201,7 +206,7 @@ export function definePluginEntry(api: PluginAPI): void {
       },
       required: ['name', 'pattern'],
     },
-    execute: async (args) => {
+    execute: async (_id, args) => {
       const matches = await manager.grepSession(
         args.name as string,
         args.pattern as string,
@@ -224,7 +229,7 @@ export function definePluginEntry(api: PluginAPI): void {
       },
       required: ['name'],
     },
-    execute: async (args) => {
+    execute: async (_id, args) => {
       await manager.compactSession(args.name as string, args.summary as string | undefined);
       return { ok: true };
     },
@@ -239,7 +244,7 @@ export function definePluginEntry(api: PluginAPI): void {
       type: 'object',
       properties: { cwd: { type: 'string', description: 'Project directory' } },
     },
-    execute: async (args) => {
+    execute: async (_id, args) => {
       const agents = manager.listAgents(args.cwd as string | undefined);
       return { ok: true, agents };
     },
@@ -255,7 +260,7 @@ export function definePluginEntry(api: PluginAPI): void {
       properties: { name: { type: 'string', description: 'Session name' } },
       required: ['name'],
     },
-    execute: async (args) => {
+    execute: async (_id, args) => {
       const response = await manager.teamList(args.name as string);
       return { ok: true, response };
     },
@@ -275,7 +280,7 @@ export function definePluginEntry(api: PluginAPI): void {
       },
       required: ['name', 'teammate', 'message'],
     },
-    execute: async (args) => {
+    execute: async (_id, args) => {
       const result = await manager.teamSend(
         args.name as string,
         args.teammate as string,
@@ -284,4 +289,7 @@ export function definePluginEntry(api: PluginAPI): void {
       return { ok: true, ...result };
     },
   });
-}
+  },
+};
+
+export default plugin;
