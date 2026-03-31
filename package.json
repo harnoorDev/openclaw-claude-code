@@ -32,12 +32,22 @@
     "openclaw",
     "plugin",
     "claude-code",
+    "claude",
+    "ai-agent",
+    "coding-agent",
     "agent-teams",
-    "mcp",
-    "multi-model",
-    "proxy"
+    "session-management",
+    "mcp"
   ],
   "author": "enderfga",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Enderfga/openclaw-claude-code.git"
+  },
+  "homepage": "https://github.com/Enderfga/openclaw-claude-code#readme",
+  "bugs": {
+    "url": "https://github.com/Enderfga/openclaw-claude-code/issues"
+  },
   "license": "MIT",
   "dependencies": {
     "commander": "^12.1.0",

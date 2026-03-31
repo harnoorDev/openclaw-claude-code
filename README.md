@@ -2,6 +2,8 @@
 
 Full-featured Claude Code integration for OpenClaw — session management, agent teams, multi-model proxy, and plan mode workflows.
 
+[![npm version](https://img.shields.io/npm/v/@enderfga/openclaw-claude-code.svg)](https://www.npmjs.com/package/@enderfga/openclaw-claude-code)
+[![CI](https://github.com/Enderfga/openclaw-claude-code/actions/workflows/ci.yml/badge.svg)](https://github.com/Enderfga/openclaw-claude-code/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
 ## What is this?
@@ -38,20 +40,24 @@ claude-code-skill session-send myproject "fix the auth bug"
 claude-code-skill session-stop myproject
 ```
 
-## Tools (10)
+## Tools (14)
 
 | Tool | Description |
 |------|-------------|
 | `claude_session_start` | Start a session with full CLI flag support (model, effort, worktree, bare, agent teams, etc.) |
 | `claude_session_send` | Send a message and get the response |
 | `claude_session_stop` | Stop a session |
-| `claude_session_list` | List active sessions |
+| `claude_session_list` | List active sessions (also returns `persisted` sessions array) |
 | `claude_session_status` | Status with context %, tokens, cost, uptime |
 | `claude_session_grep` | Search session history by regex |
 | `claude_session_compact` | Compact session to reclaim context window |
+| `claude_session_update_tools` | Update allowed/disallowed tools at runtime (restarts with --resume) |
+| `claude_session_switch_model` | Switch model for a running session (restarts with --resume) |
 | `claude_agents_list` | List agent definitions from `.claude/agents/` |
 | `claude_team_list` | List teammates in an agent team session |
 | `claude_team_send` | Send message to a specific teammate |
+| `claude_session_health` | Health check for a specific session |
+| `claude_sessions_overview` | Plugin health overview: all sessions, stats, version |
 
 ## CLI Commands
 
