@@ -55,8 +55,9 @@ program
 // Session commands
 program
   .command('session-start [name]')
-  .description('Start a persistent Claude Code session')
+  .description('Start a persistent coding session (Claude Code or Codex)')
   .option('-d, --cwd <dir>', 'Working directory')
+  .option('-e, --engine <engine>', 'Engine: claude (default) or codex')
   .option('-m, --model <model>', 'Model to use')
   .option('--permission-mode <mode>', 'Permission mode', 'acceptEdits')
   .option('--effort <level>', 'Effort level')
@@ -79,6 +80,7 @@ program
   .action(async (name, opts) => {
     const body: Record<string, unknown> = { name: name || `session-${Date.now()}` };
     if (opts.cwd) body.cwd = opts.cwd;
+    if (opts.engine) body.engine = opts.engine;
     if (opts.model) body.model = opts.model;
     if (opts.permissionMode) body.permissionMode = opts.permissionMode;
     if (opts.effort) body.effort = opts.effort;
@@ -112,11 +114,18 @@ program
   .option('--effort <level>', 'Effort level')
   .option('--plan', 'Plan mode')
   .option('-t, --timeout <ms>', 'Timeout', '300000')
+  .option('-s, --stream', 'Collect streaming chunks and include in output')
   .action(async (name, message, opts) => {
     const result = await api('/session/send', 'POST', {
       name, message, effort: opts.effort, plan: opts.plan, timeout: parseInt(opts.timeout),
+      stream: opts.stream || undefined,
     });
-    if (result.ok) console.log(result.output);
+    if (result.ok) {
+      console.log(result.output);
+      if (opts.stream && Array.isArray(result.chunks) && result.chunks.length > 0) {
+        console.log(`\n[${result.chunks.length} streaming chunks collected]`);
+      }
+    }
     else console.error(`Failed: ${result.error}`);
   });
 

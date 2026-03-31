@@ -92,23 +92,29 @@ function makeDebounced(fn: () => void, ms: number): () => void {
 }
 
 import { PersistentClaudeSession } from './persistent-session.js';
+import { PersistentCodexSession } from './persistent-codex-session.js';
 import {
   type SessionConfig,
   type SessionInfo,
   type SendResult,
   type PluginConfig,
   type EffortLevel,
+  type EngineType,
   type AgentInfo,
   type SkillInfo,
   type RuleInfo,
   type StreamEvent,
+  type ISession,
+  type CouncilConfig,
+  type CouncilSession,
   MODEL_ALIASES,
 } from './types.js';
+import { Council } from './council.js';
 
 // ─── Internal Types ──────────────────────────────────────────────────────────
 
 interface ManagedSession {
-  session: PersistentClaudeSession;
+  session: ISession;
   config: SessionConfig;
   created: string;
   lastActivity: number;
@@ -190,11 +196,12 @@ export class SessionManager {
       fullConfig.resolvedModel = this._resolveModel(fullConfig.model, fullConfig.modelOverrides);
     }
 
-    const session = new PersistentClaudeSession(fullConfig);
+    const engine: EngineType = fullConfig.engine || 'claude';
+    const session = this._createSession(engine, fullConfig);
 
-    session.on('log', (msg: string) => console.log(`[Session:${name}]`, msg));
+    session.on('log', (...args: unknown[]) => console.log(`[Session:${name}]`, ...args));
 
-    await session.start(this.pluginConfig.claudeBin);
+    await session.start();
 
     const managed: ManagedSession = {
       session,
@@ -278,7 +285,7 @@ export class SessionManager {
     return Array.from(this.persistedSessions.values());
   }
 
-  getStatus(name: string): SessionInfo & { stats: ReturnType<PersistentClaudeSession['getStats']> } {
+  getStatus(name: string): SessionInfo & { stats: ReturnType<ISession['getStats']> } {
     const managed = this._getSession(name);
     return {
       ...this._toSessionInfo(name, managed),
@@ -686,6 +693,62 @@ export class SessionManager {
         const match = content.match(/^---\n[\s\S]*?description:\s*(.+)/m);
         return { name: f.replace('.md', ''), file: f, description: match?.[1]?.trim() || '' };
       });
+  }
+
+  private _createSession(engine: EngineType, config: SessionConfig): ISession {
+    switch (engine) {
+      case 'codex':
+        return new PersistentCodexSession(config, process.env.CODEX_BIN);
+      case 'claude':
+      default:
+        return new PersistentClaudeSession(config, this.pluginConfig.claudeBin);
+    }
+  }
+
+  // ─── Council ──────────────────────────────────────────────────────────
+
+  private councils = new Map<string, Council>();
+  private static COUNCIL_RESULT_TTL_MS = 30 * 60 * 1000; // keep completed councils queryable for 30 min
+
+  councilStart(task: string, config: CouncilConfig): CouncilSession {
+    const council = new Council(config, this);
+    const initialSession = council.init(task);
+
+    // Store BEFORE running so council_status/abort/inject work while it's active
+    this.councils.set(initialSession.id, council);
+
+    // Run in background — callers poll via councilStatus()
+    council.run().then(() => {
+      // Keep completed council queryable; schedule cleanup after TTL
+      this._scheduleCouncilCleanup(initialSession.id);
+    }).catch((err) => {
+      console.error(`[SessionManager] Council ${initialSession.id} failed:`, err);
+      this._scheduleCouncilCleanup(initialSession.id);
+    });
+
+    return initialSession;
+  }
+
+  private _scheduleCouncilCleanup(id: string): void {
+    setTimeout(() => { this.councils.delete(id); }, SessionManager.COUNCIL_RESULT_TTL_MS);
+  }
+
+  councilStatus(id: string): CouncilSession | undefined {
+    const council = this.councils.get(id);
+    return council?.getSession();
+  }
+
+  councilAbort(id: string): void {
+    const council = this.councils.get(id);
+    if (!council) throw new Error(`Council '${id}' not found`);
+    council.abort();
+    this.councils.delete(id);
+  }
+
+  councilInject(id: string, message: string): void {
+    const council = this.councils.get(id);
+    if (!council) throw new Error(`Council '${id}' not found`);
+    council.injectMessage(message);
   }
 
   private _cleanupIdleSessions(): void {

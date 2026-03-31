@@ -12,12 +12,16 @@
 import { SessionManager } from './session-manager.js';
 import { createProxyHandler } from './proxy/handler.js';
 import { EmbeddedServer } from './embedded-server.js';
-import type { PluginConfig, EffortLevel } from './types.js';
+import type { PluginConfig, EffortLevel, EngineType, CouncilConfig, AgentPersona } from './types.js';
 
 // ─── Standalone Export ───────────────────────────────────────────────────────
 
 export { SessionManager } from './session-manager.js';
 export { PersistentClaudeSession } from './persistent-session.js';
+export { PersistentCodexSession } from './persistent-codex-session.js';
+export { Council, getDefaultCouncilConfig } from './council.js';
+export { parseConsensus, stripConsensusTags, hasConsensusMarker } from './consensus.js';
+export type { ISession } from './types.js';
 export * from './types.js';
 
 // ─── Plugin Entry ────────────────────────────────────────────────────────────
@@ -113,13 +117,14 @@ const plugin = {
 
     api.registerTool({
       name: 'claude_session_start',
-      description: 'Start a persistent Claude Code session with full CLI flag support (model, effort, worktree, bare, agent teams, etc.)',
+      description: 'Start a persistent coding session. Supports multiple engines: claude (default) for Claude Code CLI, codex for OpenAI Codex CLI.',
       parameters: {
         type: 'object',
         properties: {
           name:                   { type: 'string', description: 'Session name (auto-generated if omitted)' },
           cwd:                    { type: 'string', description: 'Working directory' },
-          model:                  { type: 'string', description: 'Model to use (opus, sonnet, haiku, gemini-pro, etc.)' },
+          engine:                 { type: 'string', enum: ['claude', 'codex'], description: 'Engine to use (default: claude)' },
+          model:                  { type: 'string', description: 'Model to use (opus, sonnet, haiku, gemini-pro, o4-mini, etc.)' },
           permissionMode:         { type: 'string', enum: ['acceptEdits', 'bypassPermissions', 'default', 'delegate', 'dontAsk', 'plan', 'auto'] },
           effort:                 { type: 'string', enum: ['low', 'medium', 'high', 'max', 'auto'] },
           allowedTools:           { type: 'array', items: { type: 'string' }, description: 'Tools to auto-approve' },
@@ -387,6 +392,111 @@ const plugin = {
       execute: async (_id, args) => {
         const info = await getManager().switchModel(args.name as string, args.model as string);
         return { ok: true, restarted: true, ...info };
+      },
+    });
+
+    // ─── Tool: council_start ────────────────────────────────────────────
+
+    api.registerTool({
+      name: 'council_start',
+      description: 'Start a multi-agent council that collaborates on a task using git worktree isolation, round-based execution, and consensus voting. Agents can use different engines (Claude, Codex) and models.',
+      parameters: {
+        type: 'object',
+        properties: {
+          task:        { type: 'string', description: 'Task description for the council to work on' },
+          projectDir:  { type: 'string', description: 'Working directory for the council project' },
+          agents: {
+            type: 'array',
+            description: 'Agent personas. Defaults to 3-agent team (Architect, Engineer, Reviewer) if omitted.',
+            items: {
+              type: 'object',
+              properties: {
+                name:    { type: 'string', description: 'Agent display name' },
+                emoji:   { type: 'string', description: 'Agent emoji identifier' },
+                persona: { type: 'string', description: 'Agent personality/expertise description' },
+                engine:  { type: 'string', enum: ['claude', 'codex'], description: 'Engine (default: claude)' },
+                model:   { type: 'string', description: 'Model to use' },
+                baseUrl: { type: 'string', description: 'Custom API endpoint (for proxy)' },
+              },
+              required: ['name', 'emoji', 'persona'],
+            },
+          },
+          maxRounds:        { type: 'number', description: 'Max collaboration rounds (default 15)' },
+          agentTimeoutMs:   { type: 'number', description: 'Per-agent timeout in ms (default 1800000)' },
+          maxTurnsPerAgent: { type: 'number', description: 'Max tool turns per agent per round (default 30)' },
+          maxBudgetUsd:     { type: 'number', description: 'Max API spend per agent (USD)' },
+        },
+        required: ['task', 'projectDir'],
+      },
+      execute: async (_id, args) => {
+        const { getDefaultCouncilConfig } = await import('./council.js');
+        const projectDir = args.projectDir as string;
+        const defaultConfig = getDefaultCouncilConfig(projectDir);
+
+        const config: CouncilConfig = {
+          name: 'council',
+          agents: (args.agents as AgentPersona[] | undefined) || defaultConfig.agents,
+          maxRounds: (args.maxRounds as number | undefined) || defaultConfig.maxRounds,
+          projectDir,
+          agentTimeoutMs: args.agentTimeoutMs as number | undefined,
+          maxTurnsPerAgent: args.maxTurnsPerAgent as number | undefined,
+          maxBudgetUsd: args.maxBudgetUsd as number | undefined,
+        };
+
+        const session = getManager().councilStart(args.task as string, config);
+        return { ok: true, ...session, note: 'Council running in background. Poll with council_status.' };
+      },
+    });
+
+    // ─── Tool: council_status ───────────────────────────────────────────
+
+    api.registerTool({
+      name: 'council_status',
+      description: 'Get the status of a running council session',
+      parameters: {
+        type: 'object',
+        properties: { id: { type: 'string', description: 'Council session ID' } },
+        required: ['id'],
+      },
+      execute: async (_id, args) => {
+        const session = getManager().councilStatus(args.id as string);
+        if (!session) return { ok: false, error: 'Council not found' };
+        return { ok: true, ...session };
+      },
+    });
+
+    // ─── Tool: council_abort ────────────────────────────────────────────
+
+    api.registerTool({
+      name: 'council_abort',
+      description: 'Abort a running council, stopping all agent sessions',
+      parameters: {
+        type: 'object',
+        properties: { id: { type: 'string', description: 'Council session ID' } },
+        required: ['id'],
+      },
+      execute: async (_id, args) => {
+        getManager().councilAbort(args.id as string);
+        return { ok: true };
+      },
+    });
+
+    // ─── Tool: council_inject ───────────────────────────────────────────
+
+    api.registerTool({
+      name: 'council_inject',
+      description: 'Inject a user message into the next round of a running council. The message will be appended to all agent prompts in the next round.',
+      parameters: {
+        type: 'object',
+        properties: {
+          id:      { type: 'string', description: 'Council session ID' },
+          message: { type: 'string', description: 'Message to inject' },
+        },
+        required: ['id', 'message'],
+      },
+      execute: async (_id, args) => {
+        getManager().councilInject(args.id as string, args.message as string);
+        return { ok: true };
       },
     });
   },
