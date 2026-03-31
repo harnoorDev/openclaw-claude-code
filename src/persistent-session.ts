@@ -16,6 +16,11 @@ import {
   type EffortLevel,
   type HookConfig,
   type StreamEvent,
+  type ISession,
+  type SessionSendOptions,
+  type StreamCallbacks,
+  type TurnResult,
+  type CostBreakdown,
   MODEL_ALIASES,
   MODEL_PRICING,
   type ModelPricing,
@@ -27,27 +32,6 @@ function getModelPricing(model?: string): ModelPricing {
   if (!model) return MODEL_PRICING['claude-sonnet-4-6']!;
   const key = model.replace(/^anthropic\/|^google\/|^openai\/|^openai-codex\//g, '');
   return MODEL_PRICING[key] ?? MODEL_PRICING['claude-sonnet-4-6']!;
-}
-
-// ─── Send Options ────────────────────────────────────────────────────────────
-
-interface SendOptions {
-  effort?: EffortLevel;
-  plan?: boolean;
-  waitForComplete?: boolean;
-  timeout?: number;
-  callbacks?: StreamCallbacks;
-}
-
-interface StreamCallbacks {
-  onText?: (text: string) => void;
-  onToolUse?: (event: unknown) => void;
-  onToolResult?: (event: unknown) => void;
-}
-
-interface TurnResult {
-  text: string;
-  event: StreamEvent;
 }
 
 // ─── Internal Stats ──────────────────────────────────────────────────────────
@@ -67,8 +51,9 @@ interface InternalStats {
 
 // ─── PersistentClaudeSession ─────────────────────────────────────────────────
 
-export class PersistentClaudeSession extends EventEmitter {
+export class PersistentClaudeSession extends EventEmitter implements ISession {
   private options: SessionConfig & { hooks?: HookConfig; modelOverrides?: Record<string, string> };
+  private claudeBin: string;
   private proc: ChildProcess | null = null;
   private _isReady = false;
   private _isPaused = false;
@@ -81,8 +66,9 @@ export class PersistentClaudeSession extends EventEmitter {
   public sessionId?: string;
   public stats: InternalStats;
 
-  constructor(config: SessionConfig) {
+  constructor(config: SessionConfig, claudeBin?: string) {
     super();
+    this.claudeBin = claudeBin || process.env.CLAUDE_BIN || 'claude';
     this.options = {
       ...config,
       permissionMode: config.permissionMode || 'acceptEdits',
@@ -109,16 +95,8 @@ export class PersistentClaudeSession extends EventEmitter {
 
   // ─── Start ───────────────────────────────────────────────────────────────
 
-  /**
-   * Resolve the claude binary path.
-   * Priority: explicit argument > CLAUDE_BIN env var > 'claude' default.
-   */
-  private static resolveBin(claudeBin?: string): string {
-    return claudeBin || process.env.CLAUDE_BIN || 'claude';
-  }
-
-  async start(claudeBin?: string): Promise<this> {
-    const resolvedBin = PersistentClaudeSession.resolveBin(claudeBin);
+  async start(): Promise<this> {
+    const resolvedBin = this.claudeBin;
     const args = [
       '-p',
       '--input-format', 'stream-json',
@@ -437,7 +415,7 @@ export class PersistentClaudeSession extends EventEmitter {
 
   // ─── Send ────────────────────────────────────────────────────────────────
 
-  async send(message: string | unknown[], options: SendOptions = {}): Promise<TurnResult | { requestId: number; sent: boolean }> {
+  async send(message: string | unknown[], options: SessionSendOptions = {}): Promise<TurnResult | { requestId: number; sent: boolean }> {
     if (!this._isReady || !this.proc) throw new Error('Session not ready. Call start() first.');
 
     const requestId = ++this.currentRequestId;
@@ -598,7 +576,7 @@ export class PersistentClaudeSession extends EventEmitter {
   getEffort(): EffortLevel { return this.options.effort || 'auto'; }
   setEffort(level: EffortLevel): void { this.options.effort = level; }
 
-  getCost() {
+  getCost(): CostBreakdown {
     const pricing = getModelPricing(this.options.model);
     const nonCachedIn = Math.max(0, this.stats.tokensIn - this.stats.cachedTokens);
     return {
