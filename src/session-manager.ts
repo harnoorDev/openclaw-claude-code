@@ -75,9 +75,23 @@ function savePersistedSessions(sessions: Map<string, PersistedSession>): void {
 function savePersistedSessionsAsync(sessions: Map<string, PersistedSession>): void {
   const arr = Array.from(sessions.values());
   const tmp = PERSIST_FILE + '.tmp';
-  fs.mkdir(PERSIST_DIR, { recursive: true }, () => {
-    fs.writeFile(tmp, JSON.stringify(arr, null, 2), (err) => {
-      if (!err) fs.rename(tmp, PERSIST_FILE, () => {});
+  fs.mkdir(PERSIST_DIR, { recursive: true }, (mkdirErr) => {
+    if (mkdirErr) {
+      console.error('[SessionManager] Failed to create persist dir:', mkdirErr.message);
+      return;
+    }
+    fs.writeFile(tmp, JSON.stringify(arr, null, 2), (writeErr) => {
+      if (writeErr) {
+        console.error('[SessionManager] Failed to write session file:', writeErr.message);
+        return;
+      }
+      fs.rename(tmp, PERSIST_FILE, (renameErr) => {
+        if (renameErr) {
+          console.error('[SessionManager] Failed to rename session file:', renameErr.message);
+          // Clean up orphan tmp file
+          fs.unlink(tmp, () => {});
+        }
+      });
     });
   });
 }
@@ -135,6 +149,7 @@ interface SendOptions {
 
 export class SessionManager {
   private sessions = new Map<string, ManagedSession>();
+  private _pendingSessions = new Map<string, Promise<SessionInfo>>();
   private cleanupTimer: ReturnType<typeof setInterval> | null = null;
   private pluginConfig: PluginConfig;
   private persistedSessions: Map<string, PersistedSession>;
@@ -172,6 +187,20 @@ export class SessionManager {
       return this._toSessionInfo(name, existing);
     }
 
+    // Guard against concurrent creation of the same session name
+    const pending = this._pendingSessions.get(name);
+    if (pending) return pending;
+
+    const promise = this._doStartSession(name, config);
+    this._pendingSessions.set(name, promise);
+    try {
+      return await promise;
+    } finally {
+      this._pendingSessions.delete(name);
+    }
+  }
+
+  private async _doStartSession(name: string, config: Partial<SessionConfig> & { name?: string }): Promise<SessionInfo> {
     if (this.sessions.size >= this.pluginConfig.maxConcurrentSessions) {
       throw new Error(`Max concurrent sessions (${this.pluginConfig.maxConcurrentSessions}) reached`);
     }
@@ -179,7 +208,7 @@ export class SessionManager {
     // Auto-resume: if we have a persisted claudeSessionId for this name, inject it
     const persisted = this.persistedSessions.get(name);
     // Unified: only use resumeSessionId (claudeResumeId is an internal alias, not exposed)
-    const resumeId = config.resumeSessionId || persisted?.claudeSessionId;
+    const resumeId = config.resumeSessionId ?? persisted?.claudeSessionId;
 
     const fullConfig: SessionConfig = {
       name,

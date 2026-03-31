@@ -9,6 +9,7 @@ import { spawn, ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import * as readline from 'node:readline';
 import * as fs from 'node:fs';
+import * as path from 'node:path';
 
 import {
   type SessionConfig,
@@ -195,9 +196,12 @@ export class PersistentClaudeSession extends EventEmitter implements ISession {
       for (const b of bl) args.push('--betas', b.trim());
     }
 
-    // Ensure CWD exists
-    if (this.options.cwd && !fs.existsSync(this.options.cwd)) {
-      fs.mkdirSync(this.options.cwd, { recursive: true });
+    // Ensure CWD exists (normalize to prevent path traversal)
+    if (this.options.cwd) {
+      this.options.cwd = path.resolve(this.options.cwd);
+      if (!fs.existsSync(this.options.cwd)) {
+        fs.mkdirSync(this.options.cwd, { recursive: true });
+      }
     }
 
     // Build spawn environment
@@ -237,7 +241,13 @@ export class PersistentClaudeSession extends EventEmitter implements ISession {
     });
 
     this.proc.stderr?.on('data', (data: Buffer) => {
-      this.emit('log', `[stderr] ${data.toString()}`);
+      const sanitized = data.toString()
+        .replace(/sk-ant-[a-zA-Z0-9_-]+/g, 'sk-ant-***')
+        .replace(/ANTHROPIC_API_KEY=[^\s]+/g, 'ANTHROPIC_API_KEY=***')
+        .replace(/OPENAI_API_KEY=[^\s]+/g, 'OPENAI_API_KEY=***')
+        .replace(/GEMINI_API_KEY=[^\s]+/g, 'GEMINI_API_KEY=***')
+        .replace(/Bearer [a-zA-Z0-9_-]+/g, 'Bearer ***');
+      this.emit('log', `[stderr] ${sanitized}`);
     });
 
     this.proc.on('close', (code) => {

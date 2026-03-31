@@ -51,9 +51,6 @@ claude-code-skill session-status myproject
 # Compact session when context gets large
 claude-code-skill session-compact myproject
 
-# Switch model mid-session
-claude-code-skill session-model myproject opus
-
 # Start with auto mode — classifier approves safe actions automatically
 claude-code-skill session-start myproject -d ~/project \
   --permission-mode auto --enable-auto-mode \
@@ -187,40 +184,18 @@ claude-code-skill session-list
 # Get detailed status
 claude-code-skill session-status myproject
 
-# View conversation history
-claude-code-skill session-history myproject -n 50
-
-# Pause and resume
-claude-code-skill session-pause myproject
-claude-code-skill session-resume-paused myproject
-
-# Fork a session (create a branch for experiments)
-claude-code-skill session-fork myproject myproject-experiment
-
 # Stop
 claude-code-skill session-stop myproject
-
-# Restart a failed session
-claude-code-skill session-restart myproject
 ```
 
 #### Effort & Model Control
 
 ```bash
-# Set effort level for a session (persists across messages)
-claude-code-skill session-effort myproject low      # Fast, minimal thinking
-claude-code-skill session-effort myproject medium   # Balanced (default for Opus 4.6)
-claude-code-skill session-effort myproject high     # Deep thinking
-claude-code-skill session-effort myproject max      # Maximum capability, no token limit (Opus 4.6 only)
-claude-code-skill session-effort myproject auto     # Reset to default
-
-# Switch model mid-session
-claude-code-skill session-model myproject opus
-claude-code-skill session-model myproject sonnet
-claude-code-skill session-model myproject gemini-pro
-
 # Start session with effort preset
 claude-code-skill session-start myproject -d ~/project --effort high
+
+# Use effort control per-message via session-send
+claude-code-skill session-send myproject "Analyze this code" --effort high
 
 # Model aliases (built-in: opus, sonnet, haiku, gemini-flash, gemini-pro)
 # Custom aliases via --model-overrides
@@ -297,8 +272,8 @@ claude-code-skill session-compact myproject
 # Compact with custom summary
 claude-code-skill session-compact myproject --summary "Finished auth refactor, now on tests"
 
-# Check context usage
-claude-code-skill session-context myproject
+# Check context usage via session status
+claude-code-skill session-status myproject
 ```
 
 ### Session History & Search
@@ -481,19 +456,12 @@ uvicorn server:app --host 127.0.0.1 --port 8082
    --permission-mode plan  # Preview before applying
    ```
 
-5. **Fork before experiments**
-   ```bash
-   claude-code-skill session-fork main experimental
-   claude-code-skill session-send experimental "Try risky refactor"
-   ```
-
 ### Error Recovery
 
 ```bash
 # If session fails:
 claude-code-skill session-status myproject  # Check what happened
-claude-code-skill session-history myproject -n 20  # See recent events
-claude-code-skill session-restart myproject  # Restart from last good state
+claude-code-skill session-grep myproject "error" # Search for errors in session history
 
 # If you need to start over:
 claude-code-skill session-stop myproject

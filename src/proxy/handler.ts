@@ -190,10 +190,14 @@ async function forwardToAnthropic(
     const reader = resp.body?.getReader();
     if (reader) {
       const decoder = new TextDecoder();
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        res.write(decoder.decode(value, { stream: true }));
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          res.write(decoder.decode(value, { stream: true }));
+        }
+      } finally {
+        reader.cancel().catch(() => {});
       }
     }
     res.end();
@@ -240,9 +244,13 @@ async function forwardToGateway(
     const reader = resp.body?.getReader();
     if (!reader) { res.end(); return true; }
 
-    const lineStream = readSSELines(reader);
-    for await (const sseChunk of convertStreamOpenAIToAnthropic(lineStream, originalModel)) {
-      res.write(sseChunk);
+    try {
+      const lineStream = readSSELines(reader);
+      for await (const sseChunk of convertStreamOpenAIToAnthropic(lineStream, originalModel)) {
+        res.write(sseChunk);
+      }
+    } finally {
+      reader.cancel().catch(() => {});
     }
     res.end();
   } else {
@@ -306,9 +314,13 @@ async function handleStreamingResponse(
   const reader = resp.body?.getReader();
   if (!reader) { res.end(); return true; }
 
-  const lineStream = readSSELines(reader);
-  for await (const sseChunk of convertStreamOpenAIToAnthropic(lineStream, originalModel)) {
-    res.write(sseChunk);
+  try {
+    const lineStream = readSSELines(reader);
+    for await (const sseChunk of convertStreamOpenAIToAnthropic(lineStream, originalModel)) {
+      res.write(sseChunk);
+    }
+  } finally {
+    reader.cancel().catch(() => {});
   }
   res.end();
   return true;

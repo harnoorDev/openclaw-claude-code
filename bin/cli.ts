@@ -9,8 +9,19 @@
  */
 
 import { Command } from 'commander';
+import { createRequire } from 'node:module';
 
 const BASE_URL = process.env.CLAUDE_CODE_API_URL || 'http://127.0.0.1:18796';
+
+function getCliVersion(): string {
+  try {
+    const _require = createRequire(import.meta.url);
+    const pkg = _require('../package.json') as { version?: string };
+    return pkg.version || '0.0.0';
+  } catch {
+    return '0.0.0';
+  }
+}
 
 // ─── HTTP Client ─────────────────────────────────────────────────────────────
 
@@ -31,7 +42,7 @@ async function api(path: string, method = 'GET', body?: unknown): Promise<Record
 // ─── CLI ─────────────────────────────────────────────────────────────────────
 
 const program = new Command();
-program.name('claude-code-skill').description('Claude Code SDK CLI').version('2.0.0');
+program.name('claude-code-skill').description('Claude Code SDK CLI').version(getCliVersion());
 
 // Serve (standalone mode — no OpenClaw needed)
 program

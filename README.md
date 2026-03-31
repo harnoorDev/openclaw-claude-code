@@ -67,7 +67,7 @@ const session = manager.councilStart('Build a REST API with auth', {
 
 See [Council](./docs/council.md) for the full collaboration protocol.
 
-### 18 Tools
+### 17 Tools
 
 | Category | Tools |
 |----------|-------|
@@ -90,7 +90,7 @@ See [Tools Reference](./docs/tools.md) for complete API.
 
 ```
 src/
-├── index.ts                    # Plugin entry — 18 tools + proxy route
+├── index.ts                    # Plugin entry — 17 tools + proxy route
 ├── types.ts                    # Shared types, ISession interface, model pricing
 ├── persistent-session.ts       # Claude Code engine (ISession)
 ├── persistent-codex-session.ts # Codex engine (ISession)

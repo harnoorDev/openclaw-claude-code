@@ -77,12 +77,21 @@ function spawnAsync(
   });
 }
 
+const VALID_AGENT_NAME = /^[a-zA-Z0-9_-]+$/;
+
 /** Set up git worktrees — one isolated directory per agent */
 async function setupWorktrees(
   projectDir: string,
   agents: AgentPersona[],
 ): Promise<Map<string, string>> {
   const worktreeMap = new Map<string, string>();
+
+  // Validate agent names before using them in git branch names
+  for (const agent of agents) {
+    if (!VALID_AGENT_NAME.test(agent.name)) {
+      throw new Error(`Invalid agent name '${agent.name}': must match /^[a-zA-Z0-9_-]+$/`);
+    }
+  }
 
   if (!fs.existsSync(projectDir)) {
     fs.mkdirSync(projectDir, { recursive: true });
@@ -96,14 +105,20 @@ async function setupWorktrees(
   }
 
   // Git user config
-  await spawnAsync('git', ['-C', projectDir, 'config', 'user.email', 'council@openclaw'], { timeout: 5000 }).catch(() => {});
-  await spawnAsync('git', ['-C', projectDir, 'config', 'user.name', 'Council'], { timeout: 5000 }).catch(() => {});
+  await spawnAsync('git', ['-C', projectDir, 'config', 'user.email', 'council@openclaw'], { timeout: 5000 }).catch((err) => {
+    console.error('[Council] Failed to set git user.email:', err.message);
+  });
+  await spawnAsync('git', ['-C', projectDir, 'config', 'user.name', 'Council'], { timeout: 5000 }).catch((err) => {
+    console.error('[Council] Failed to set git user.name:', err.message);
+  });
 
   // Ensure at least one commit
   const hasCommit = await spawnAsync('git', ['-C', projectDir, 'rev-parse', 'HEAD'], { timeout: 5000 })
     .then(() => true).catch(() => false);
   if (!hasCommit) {
-    await spawnAsync('git', ['-C', projectDir, 'add', '-A'], { timeout: 5000 }).catch(() => {});
+    await spawnAsync('git', ['-C', projectDir, 'add', '-A'], { timeout: 5000 }).catch((err) => {
+      console.error('[Council] Failed to git add:', err.message);
+    });
     await spawnAsync('git', ['-C', projectDir, 'commit', '--allow-empty', '-m', 'council: initial'], { timeout: 5000 });
   }
 
@@ -122,15 +137,23 @@ async function setupWorktrees(
         if (dirty) {
           console.log(`[Council] WARNING: worktree ${wtDir} has uncommitted changes — discarding via hard reset`);
         }
-        await spawnAsync('git', ['-C', wtDir, 'checkout', branch], { timeout: 5000 }).catch(() => {});
-        await spawnAsync('git', ['-C', wtDir, 'reset', '--hard', 'HEAD'], { timeout: 5000 }).catch(() => {});
+        await spawnAsync('git', ['-C', wtDir, 'checkout', branch], { timeout: 5000 }).catch((err) => {
+          console.error(`[Council] Failed to checkout branch ${branch} in ${wtDir}:`, err.message);
+        });
+        await spawnAsync('git', ['-C', wtDir, 'reset', '--hard', 'HEAD'], { timeout: 5000 }).catch((err) => {
+          console.error(`[Council] Failed to hard reset in ${wtDir}:`, err.message);
+        });
         worktreeMap.set(agent.name, wtDir);
         continue;
       }
-      await spawnAsync('git', ['-C', projectDir, 'worktree', 'remove', '--force', wtDir], { timeout: 5000 }).catch(() => {});
+      await spawnAsync('git', ['-C', projectDir, 'worktree', 'remove', '--force', wtDir], { timeout: 5000 }).catch((err) => {
+        console.error(`[Council] Failed to remove worktree ${wtDir}:`, err.message);
+      });
     }
 
-    await spawnAsync('git', ['-C', projectDir, 'branch', '-D', branch], { timeout: 5000 }).catch(() => {});
+    await spawnAsync('git', ['-C', projectDir, 'branch', '-D', branch], { timeout: 5000 }).catch((err) => {
+      console.error(`[Council] Failed to delete branch ${branch}:`, err.message);
+    });
     await spawnAsync('git', ['-C', projectDir, 'worktree', 'add', wtDir, '-b', branch], { timeout: 5000 });
 
     if (!fs.existsSync(wtDir)) {
