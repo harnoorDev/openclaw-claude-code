@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2026-03-31
+
+### Added
+- Stream output support — `onChunk` callback and `stream` param for `claude_session_send` (#9)
+- Session persistence — registry saved to `~/.openclaw/claude-sessions.json` with 7-day disk TTL, atomic writes, debounced saves (#11)
+- Dynamic tool/model switching — `claude_session_update_tools` and `claude_session_switch_model` with rollback on failure (#12)
+- Session health overview — `claude_sessions_overview` tool for plugin-wide stats (#10)
+- Premature CLI exit detection — startup crash no longer leaves sessions stuck in busy state (#13)
+
+### Fixed
+- Stale close listener on fallback ready path (follow-up to #13)
+- Truncated code comments in startup flow
+
+### Improved
+- Project governance: CONTRIBUTING.md, CHANGELOG.md, issue/PR templates, CI workflows, npm publish automation
+
 ## [2.1.0] - 2026-03-31
 
 ### Added
