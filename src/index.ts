@@ -126,7 +126,11 @@ const plugin = {
         properties: {
           name: { type: 'string', description: 'Session name (auto-generated if omitted)' },
           cwd: { type: 'string', description: 'Working directory' },
-          engine: { type: 'string', enum: ['claude', 'codex', 'gemini'], description: 'Engine to use (default: claude)' },
+          engine: {
+            type: 'string',
+            enum: ['claude', 'codex', 'gemini'],
+            description: 'Engine to use (default: claude)',
+          },
           model: { type: 'string', description: 'Model to use (opus, sonnet, haiku, gemini-pro, o4-mini, etc.)' },
           permissionMode: {
             type: 'string',
@@ -445,7 +449,11 @@ const plugin = {
                 name: { type: 'string', description: 'Agent display name' },
                 emoji: { type: 'string', description: 'Agent emoji identifier' },
                 persona: { type: 'string', description: 'Agent personality/expertise description' },
-                engine: { type: 'string', enum: ['claude', 'codex', 'gemini'], description: 'Engine (default: claude)' },
+                engine: {
+                  type: 'string',
+                  enum: ['claude', 'codex', 'gemini'],
+                  description: 'Engine (default: claude)',
+                },
                 model: { type: 'string', description: 'Model to use' },
                 baseUrl: { type: 'string', description: 'Custom API endpoint (for proxy)' },
               },

@@ -15,6 +15,7 @@ import { spawn, ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import * as readline from 'node:readline';
 import * as fs from 'node:fs';
+import * as path from 'node:path';
 
 import {
   type SessionConfig,
@@ -85,8 +86,12 @@ export class PersistentGeminiSession extends EventEmitter implements ISession {
   // ─── Start ───────────────────────────────────────────────────────────────
 
   async start(): Promise<this> {
-    if (this.options.cwd && !fs.existsSync(this.options.cwd)) {
-      fs.mkdirSync(this.options.cwd, { recursive: true });
+    // Normalize CWD to prevent path traversal
+    if (this.options.cwd) {
+      this.options.cwd = path.resolve(this.options.cwd);
+      if (!fs.existsSync(this.options.cwd)) {
+        fs.mkdirSync(this.options.cwd, { recursive: true });
+      }
     }
 
     this.sessionId = `gemini-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
