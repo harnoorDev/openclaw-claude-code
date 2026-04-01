@@ -112,3 +112,26 @@ claude-code-skill rules-create <name> [--description <desc>] [--content <text>] 
 claude-code-skill session-team-list <name>
 claude-code-skill session-team-send <name> <teammate> <message>
 ```
+
+## SDK-Only Tools (No CLI Wrapper)
+
+The following tools are available through the OpenClaw plugin SDK and TypeScript API but do not have CLI commands. Use the SDK directly or call them via OpenClaw's tool system.
+
+| Tool | Description |
+|------|-------------|
+| `claude_sessions_overview` | Aggregate dashboard of all active sessions |
+| `claude_session_update_tools` | Hot-swap allowed/disallowed tools via `--resume` |
+| `claude_session_switch_model` | Switch model mid-session via `--resume` |
+| `council_start` | Start multi-agent council with worktree isolation |
+| `council_status` | Poll council progress and agent responses |
+| `council_abort` | Abort a running council |
+| `council_inject` | Inject a message into the next council round |
+| `claude_session_send_to` | Cross-session messaging (immediate or queued) |
+| `claude_session_inbox` | Read inbox messages for a session |
+| `claude_session_deliver_inbox` | Deliver queued messages to an idle session |
+| `ultraplan_start` | Start background Opus planning session |
+| `ultraplan_status` | Poll ultraplan progress |
+| `ultrareview_start` | Start fleet of parallel reviewer agents |
+| `ultrareview_status` | Poll ultrareview findings |
+
+See [Tools Reference](./tools.md) for full parameter documentation.

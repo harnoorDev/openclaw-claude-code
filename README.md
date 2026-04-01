@@ -4,6 +4,7 @@ Programmable bridge that turns coding CLIs into headless, agentic engines — pe
 
 [![npm version](https://img.shields.io/npm/v/@enderfga/openclaw-claude-code.svg)](https://www.npmjs.com/package/@enderfga/openclaw-claude-code)
 [![CI](https://github.com/Enderfga/openclaw-claude-code/actions/workflows/ci.yml/badge.svg)](https://github.com/Enderfga/openclaw-claude-code/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-74%20passed-brightgreen)](https://github.com/Enderfga/openclaw-claude-code/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
 ## Why This Exists
@@ -11,6 +12,8 @@ Programmable bridge that turns coding CLIs into headless, agentic engines — pe
 Claude Code and Codex are powerful coding CLIs, but they're designed for interactive use. If you want AI agents to **programmatically** drive coding sessions — start them, send tasks, manage context, coordinate teams, switch models mid-conversation — you need a control layer.
 
 This project wraps coding CLIs and exposes their capabilities as a clean, tool-based API. Your agents get persistent sessions, real-time streaming, multi-model routing, multi-engine support, and multi-agent council orchestration.
+
+> **Why not just use the Claude API directly?** The API gives you completions. This gives you a fully managed coding agent — file editing, tool use, git awareness, context management, and multi-turn conversations — all without building the orchestration yourself.
 
 ## Quick Start
 
@@ -123,6 +126,20 @@ const review = manager.ultrareviewStart('/project', {
 - **Runtime Model/Tool Switching** — hot-swap via `--resume`
 
 ## Architecture
+
+```mermaid
+graph TD
+    A[OpenClaw / Your Code] -->|tool calls| B[Plugin Entry<br/>index.ts]
+    B --> C[SessionManager]
+    C --> D[Claude Engine<br/>persistent-session.ts]
+    C --> E[Codex Engine<br/>persistent-codex-session.ts]
+    C --> F[Council<br/>council.ts]
+    C --> G[Inbox / Ultraplan / Ultrareview]
+    F -->|git worktree per agent| D
+    B --> H[Proxy Handler]
+    H -->|Anthropic format| I[Gemini / GPT / Gateway]
+    B --> J[Embedded HTTP Server]
+```
 
 ```
 src/
