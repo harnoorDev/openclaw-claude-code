@@ -12,9 +12,9 @@ managed session layer. Key source files:
 | `src/index.ts` | Plugin entry — registers all 27 tools with OpenClaw SDK |
 | `src/session-manager.ts` | Core orchestrator — session lifecycle, inbox, council, ultraplan/ultrareview |
 | `src/persistent-session.ts` | Claude Code CLI wrapper (spawn, JSON protocol, stream parsing) |
-| `src/persistent-codex-session.ts` | Codex CLI wrapper (same ISession interface) |
-| `src/persistent-gemini-session.ts` | Gemini CLI wrapper (stream-json, per-message spawning) |
-| `src/council.ts` | Multi-agent collaboration engine with git worktree isolation and post-processing (review/accept/reject) |
+| `src/persistent-codex-session.ts` | Codex CLI wrapper (`codex exec --full-auto`) |
+| `src/persistent-gemini-session.ts` | Gemini CLI wrapper (`gemini -p --output-format stream-json`) |
+| `src/council.ts` | Multi-agent collaboration engine with git worktree isolation and post-processing |
 | `src/consensus.ts` | Consensus voting parser for council |
 | `src/types.ts` | All shared types, interfaces, model pricing |
 | `src/embedded-server.ts` | HTTP server for standalone/CLI usage |
@@ -30,7 +30,7 @@ npm run format:check   # Prettier check
 npm run test           # Vitest unit tests (src/__tests__/)
 ```
 
-Integration test (requires Claude Code CLI installed):
+Integration test (requires all 3 CLIs installed and authenticated):
 ```bash
 npx tsx test-integration.ts
 ```
@@ -46,8 +46,30 @@ npx tsx test-integration.ts
 ## Testing
 
 - Unit tests live in `src/__tests__/*.test.ts` (vitest, no external dependencies)
-- `test-integration.ts` is a manual smoke test requiring a live Claude Code CLI — not part of CI
+- `test-integration.ts` is a manual smoke test requiring live CLIs — not part of CI
 - Tests are excluded from TypeScript compilation (tsconfig.json exclude) so they don't ship in dist/
+
+## Documentation
+
+All documentation lives in `skills/references/`. This is the **single source of truth** — no `docs/` directory.
+
+When you change functionality, update the corresponding reference file:
+
+| What changed | Update |
+|---|---|
+| Tool parameters or behavior | `skills/references/tools.md` |
+| Engine invocation / flags | `skills/references/multi-engine.md` |
+| Session lifecycle | `skills/references/sessions.md` |
+| Council protocol | `skills/references/council.md` |
+| Inbox messaging | `skills/references/inbox.md` |
+| Ultraplan/Ultrareview | `skills/references/ultra.md` |
+| CLI commands | `skills/references/cli.md` |
+| Setup / prerequisites | `skills/references/getting-started.md` |
+| New feature or tool | Also update `skills/SKILL.md` description for trigger keywords |
+
+Also update:
+- **README.md** — if the change affects the feature overview, engine compat table, source tree, or known limitations
+- **CHANGELOG.md** — always, for any user-facing change
 
 ## PR Guidelines
 
@@ -55,3 +77,74 @@ npx tsx test-integration.ts
 - Run `npm run build && npm run lint && npm run test` before submitting
 - Update CHANGELOG.md for user-facing changes
 - Plugin installation requires `--dangerously-force-unsafe-install` (child_process usage)
+
+## Release Process
+
+Follow this checklist for every release. Do not skip steps.
+
+### 1. Pre-flight
+
+```bash
+npm run build && npm run lint && npm run test   # Must all pass
+```
+
+### 2. Version bump
+
+Update version in `package.json`. Follow semver:
+- **patch** (x.y.Z) — bug fixes, no new features
+- **minor** (x.Y.0) — new features, backward compatible
+- **major** (X.0.0) — breaking changes
+
+### 3. CHANGELOG.md
+
+Add a new section at the top:
+
+```markdown
+## [X.Y.Z] - YYYY-MM-DD
+
+### Added / Fixed / Changed / Removed
+- Description of each change
+```
+
+### 4. README.md sync
+
+Check and update if needed:
+- Engine Compatibility table (test with `claude --version && codex --version && gemini --version`)
+- Source tree (if files added/removed/renamed)
+- Known Limitations (if behavior changed)
+- Feature descriptions (if new features added)
+
+### 5. Commit, tag, push
+
+```bash
+git add -A
+git commit -m "feat/fix: description (vX.Y.Z)"
+git tag vX.Y.Z
+git push origin main && git push origin vX.Y.Z
+```
+
+### 6. Create GitHub Release
+
+```bash
+gh release create vX.Y.Z --title "vX.Y.Z — Title" --notes "release notes"
+```
+
+This triggers the `Publish to npm` workflow automatically.
+
+### 7. Verify
+
+```bash
+gh run list --limit 2   # CI + Publish should both pass
+```
+
+## Engine CLI Reference
+
+Current tested versions (update on each release):
+
+| Engine | CLI | Tested Version | Invocation |
+|--------|-----|---------------|------------|
+| Claude | `claude` | 2.1.91 | Persistent subprocess, `--output-format stream-json` |
+| Codex | `codex` | 0.118.0 | `codex exec --full-auto --skip-git-repo-check -C <dir>` |
+| Gemini | `gemini` | 0.36.0 | `gemini -p <msg> --output-format stream-json --yolo/--sandbox` |
+
+**Important:** When CLI vendors change flags or output format, update the corresponding `persistent-*-session.ts` and re-run integration tests.
