@@ -136,3 +136,12 @@ export const SESSION_EVENT = {
 } as const;
 
 export type SessionEventName = (typeof SESSION_EVENT)[keyof typeof SESSION_EVENT];
+
+// ─── OpenAI Compat ───────────────────────────────────────────────────────────
+
+/** Default model when the OpenAI-compat request omits `model` */
+export const OPENAI_COMPAT_DEFAULT_MODEL = 'claude-sonnet-4-6';
+/** Context utilization % threshold for auto-compact */
+export const OPENAI_COMPAT_AUTO_COMPACT_THRESHOLD = 80;
+/** Session name prefix for OpenAI-compat sessions */
+export const OPENAI_COMPAT_SESSION_PREFIX = 'openai-';

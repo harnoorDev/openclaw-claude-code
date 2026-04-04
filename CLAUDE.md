@@ -19,6 +19,7 @@ managed session layer. Key source files:
 | `src/consensus.ts` | Consensus voting parser for council |
 | `src/types.ts` | All shared types, interfaces, model pricing |
 | `src/embedded-server.ts` | HTTP server for standalone/CLI usage |
+| `src/openai-compat.ts` | OpenAI-compatible `/v1/chat/completions` endpoint |
 | `src/proxy/` | Multi-model proxy (Gemini, GPT via Anthropic format translation) |
 | `bin/cli.ts` | CLI entry point (commander-based) |
 

@@ -14,6 +14,40 @@ Start standalone embedded server (default port 18796). Set `CLAUDE_CODE_API_URL`
 
 The embedded server enforces a sliding-window rate limit of 100 requests per minute per IP address. Requests exceeding the limit receive HTTP 429 (Too Many Requests). This prevents accidental runaway scripts from overwhelming the server.
 
+### OpenAI-Compatible API
+
+The server exposes an OpenAI-compatible chat completions endpoint, enabling any webchat frontend to use it as a backend.
+
+**Endpoints:**
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/v1/chat/completions` | POST | Chat completions (streaming + non-streaming) |
+| `/v1/models` | GET | List available models |
+
+**Request format** (same as OpenAI):
+```json
+{
+  "model": "claude-sonnet-4-6",
+  "messages": [{"role": "user", "content": "Hello!"}],
+  "stream": true
+}
+```
+
+**Session routing:** Each conversation maps to a persistent session for prompt cache reuse. Session key resolved from (in priority order):
+1. `X-Session-Id` header
+2. `user` field in the request body
+3. Default singleton session
+
+**Model routing:** The `model` field auto-routes to the correct engine:
+- `claude-*`, `opus`, `sonnet`, `haiku` → Claude engine
+- `gpt-*`, `o3`, `o4-mini` → Codex engine
+- `gemini-*` → Gemini engine
+
+**CORS:** `/v1/` paths allow cross-origin requests by default. Set `OPENCLAW_CORS_ORIGINS=*` to allow all origins on all paths.
+
+**Auto-compact:** When a session's context utilization exceeds 80%, the endpoint automatically compacts the session before sending the next message.
+
 ## Session Management
 
 ### session-start

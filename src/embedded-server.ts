@@ -14,6 +14,7 @@ import * as os from 'node:os';
 import { SessionManager } from './session-manager.js';
 import { sanitizeCwd, validateRegex } from './validation.js';
 import type { EffortLevel } from './types.js';
+import { handleChatCompletion, getModelList } from './openai-compat.js';
 
 import { DEFAULT_SERVER_PORT, MAX_BODY_SIZE, RATE_LIMIT_MAX_REQUESTS, RATE_LIMIT_WINDOW_MS } from './constants.js';
 
@@ -111,11 +112,14 @@ export class EmbeddedServer {
   }
 
   private handleRequest(req: http.IncomingMessage, res: http.ServerResponse): void {
-    // CORS — restrict to localhost origins only
+    // CORS — localhost by default; /v1/ paths allow all origins (for webchat frontends)
     const origin = req.headers.origin || '';
+    const urlPath = new URL(req.url || '/', `http://localhost:${this.port}`).pathname;
+    const corsAllowAll = process.env.OPENCLAW_CORS_ORIGINS === '*';
+    const isV1Path = urlPath.startsWith('/v1/');
     const isLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(:\d+)?$/.test(origin);
-    if (isLocalhost) {
-      res.setHeader('Access-Control-Allow-Origin', origin);
+    if (isLocalhost || isV1Path || corsAllowAll) {
+      res.setHeader('Access-Control-Allow-Origin', origin || '*');
     }
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -176,10 +180,10 @@ export class EmbeddedServer {
           res.end(JSON.stringify({ ok: false, error: 'Invalid JSON' }));
           return;
         }
-        this.route(path, parsed, url.searchParams, res);
+        this.route(path, parsed, url.searchParams, res, req.headers);
       });
     } else {
-      this.route(path, {}, url.searchParams, res);
+      this.route(path, {}, url.searchParams, res, req.headers);
     }
   }
 
@@ -188,6 +192,7 @@ export class EmbeddedServer {
     body: Record<string, unknown>,
     query: URLSearchParams,
     res: http.ServerResponse,
+    headers: http.IncomingHttpHeaders = {},
   ): Promise<void> {
     try {
       const json = (status: number, data: unknown) => {
@@ -339,6 +344,18 @@ export class EmbeddedServer {
 
       if (path === '/health') {
         json(200, { ok: true, version: this.manager.getVersion(), sessions: this.manager.listSessions().length });
+        return;
+      }
+
+      // ─── OpenAI-Compatible Routes ─────────────────────────────
+
+      if (path === '/v1/chat/completions') {
+        await handleChatCompletion(this.manager, body, headers, res);
+        return;
+      }
+
+      if (path === '/v1/models') {
+        json(200, getModelList());
         return;
       }
 

@@ -74,6 +74,18 @@ The embedded HTTP server (used by CLI and standalone mode) optionally supports b
 
 When set, the token is also written to `~/.openclaw/server-token` for the CLI to read automatically. Default: no auth (localhost binding is the primary security boundary).
 
+### Using with Webchat Frontends
+
+The server exposes an OpenAI-compatible API at `/v1/chat/completions`. Point any OpenAI-compatible webchat app at it:
+
+| Setting | Value |
+|---------|-------|
+| API Base URL | `http://127.0.0.1:18796/v1` |
+| API Key | Any value (or blank if no `OPENCLAW_SERVER_TOKEN` set) |
+| Model | `claude-sonnet-4-6`, `claude-opus-4-6`, `gpt-4o`, `gemini-2.5-pro`, etc. |
+
+Tested with: ChatGPT-Next-Web, Open WebUI, LobeChat.
+
 ## Configuration
 
 In `~/.openclaw/openclaw.json`:

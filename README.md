@@ -127,6 +127,24 @@ const review = manager.ultrareviewStart('/project', {
 // Poll: manager.ultrareviewStatus(review.id)
 ```
 
+### OpenAI-Compatible API
+
+Drop-in backend for any OpenAI-compatible webchat frontend. Stateful sessions maximize Anthropic prompt caching (90% discount on cached tokens).
+
+```bash
+# Start the server
+claude-code-skill serve
+
+# Use with any OpenAI client
+curl http://127.0.0.1:18796/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model":"claude-sonnet-4-6","messages":[{"role":"user","content":"Hello!"}],"stream":true}'
+```
+
+Works with ChatGPT-Next-Web, Open WebUI, LobeChat, and any app that speaks the OpenAI API format. Set the API base URL to `http://127.0.0.1:18796/v1` and use any API key (or leave blank).
+
+See [CLI Reference](./skills/references/cli.md) for configuration options.
+
 ### And More
 
 - **Session Persistence** — 7-day disk TTL, auto-resume across restarts
@@ -165,6 +183,7 @@ src/
 ├── session-manager.ts          # Multi-session orchestration + council management
 ├── council.ts                  # Multi-agent council orchestration
 ├── consensus.ts                # Consensus vote parsing
+├── openai-compat.ts            # OpenAI-compatible /v1/chat/completions
 ├── embedded-server.ts          # HTTP server for standalone mode
 └── proxy/
     ├── handler.ts              # Provider detection + routing
