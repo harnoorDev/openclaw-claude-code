@@ -156,6 +156,8 @@ import {
   CIRCUIT_BREAKER_BACKOFF_BASE_MS,
   CIRCUIT_BREAKER_MAX_BACKOFF_MS,
   STOP_SIGKILL_DELAY_MS,
+  SESSION_EVENT,
+  DEFAULT_HISTORY_LIMIT,
 } from './constants.js';
 
 // ─── Internal Types ──────────────────────────────────────────────────────────
@@ -291,7 +293,7 @@ export class SessionManager {
     }
     const session = this._createSession(engine, fullConfig);
 
-    session.on('log', (...args: unknown[]) => console.log(`[Session:${name}]`, ...args));
+    session.on(SESSION_EVENT.LOG, (...args: unknown[]) => console.log(`[Session:${name}]`, ...args));
 
     try {
       await session.start();
@@ -405,7 +407,7 @@ export class SessionManager {
   async grepSession(
     name: string,
     pattern: string,
-    limit = 50,
+    limit = DEFAULT_HISTORY_LIMIT,
   ): Promise<Array<{ time: string; type: string; content: string }>> {
     const managed = this._getSession(name);
     const history = managed.session.getHistory(GREP_HISTORY_FETCH);

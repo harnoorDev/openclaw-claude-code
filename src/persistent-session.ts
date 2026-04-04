@@ -286,11 +286,11 @@ export class PersistentClaudeSession extends EventEmitter implements ISession {
         SESSION_READY_TIMEOUT_MS,
       );
 
-      this.once('ready', () => {
+      this.once(SESSION_EVENT.READY, () => {
         clearTimeout(timeout);
         resolve(this);
       });
-      this.once('error', (err) => {
+      this.once(SESSION_EVENT.ERROR, (err) => {
         clearTimeout(timeout);
         reject(err);
       });
@@ -302,7 +302,7 @@ export class PersistentClaudeSession extends EventEmitter implements ISession {
           reject(new Error(`Claude process exited prematurely with code ${code}. Session failed to start.`));
         }
       };
-      this.once('close', onCloseBeforeReady);
+      this.once(SESSION_EVENT.CLOSE, onCloseBeforeReady);
 
       // Emit ready on the first `system` init event from the CLI.
       // Fall back to a 2 s timer in case the CLI version doesn't emit one.
@@ -310,23 +310,23 @@ export class PersistentClaudeSession extends EventEmitter implements ISession {
         if (!this._isReady) {
           this._isReady = true;
           // Cleanup the early-close listener since initialization succeeded
-          this.removeListener('close', onCloseBeforeReady);
+          this.removeListener(SESSION_EVENT.CLOSE, onCloseBeforeReady);
           this.emit(SESSION_EVENT.READY);
         }
       };
-      this.once('init', onInit);
+      this.once(SESSION_EVENT.INIT, onInit);
       setTimeout(() => {
-        this.removeListener('init', onInit);
+        this.removeListener(SESSION_EVENT.INIT, onInit);
         // If process already exited, reject instead of falsely marking ready
         if (this.proc?.killed || this.proc?.exitCode !== null) {
           clearTimeout(timeout);
-          this.removeListener('close', onCloseBeforeReady);
+          this.removeListener(SESSION_EVENT.CLOSE, onCloseBeforeReady);
           reject(new Error('Claude CLI process crashed immediately upon startup. Fallback timer aborted.'));
           return;
         }
         if (!this._isReady) {
           this._isReady = true;
-          this.removeListener('close', onCloseBeforeReady);
+          this.removeListener(SESSION_EVENT.CLOSE, onCloseBeforeReady);
           this.emit(SESSION_EVENT.READY);
         }
       }, SESSION_READY_FALLBACK_MS);
@@ -534,7 +534,7 @@ export class PersistentClaudeSession extends EventEmitter implements ISession {
       const onText = (chunk: string) => {
         streamedText += chunk;
       };
-      this.on('text', onText);
+      this.on(SESSION_EVENT.TEXT, onText);
 
       const onAssistant = (event: StreamEvent) => {
         if (event.message?.content && Array.isArray(event.message.content)) {
@@ -543,22 +543,22 @@ export class PersistentClaudeSession extends EventEmitter implements ISession {
           }
         }
       };
-      this.on('assistant', onAssistant);
+      this.on(SESSION_EVENT.ASSISTANT, onAssistant);
 
       const onToolUse = (event: Record<string, unknown>) => {
         const tool = event.tool as Record<string, string> | undefined;
         toolNames.push(tool?.name || (event.name as string) || 'unknown');
       };
-      this.on('tool_use', onToolUse);
+      this.on(SESSION_EVENT.TOOL_USE, onToolUse);
 
       const cleanup = () => {
         clearTimeout(timer);
-        this.removeListener('text', onText);
-        this.removeListener('assistant', onAssistant);
-        this.removeListener('tool_use', onToolUse);
-        this.removeListener('turn_complete', onTurnComplete);
-        this.removeListener('error', onError);
-        this.removeListener('close', onClose);
+        this.removeListener(SESSION_EVENT.TEXT, onText);
+        this.removeListener(SESSION_EVENT.ASSISTANT, onAssistant);
+        this.removeListener(SESSION_EVENT.TOOL_USE, onToolUse);
+        this.removeListener(SESSION_EVENT.TURN_COMPLETE, onTurnComplete);
+        this.removeListener(SESSION_EVENT.ERROR, onError);
+        this.removeListener(SESSION_EVENT.CLOSE, onClose);
       };
 
       const timer = setTimeout(() => {
@@ -604,9 +604,9 @@ export class PersistentClaudeSession extends EventEmitter implements ISession {
         });
       };
 
-      this.once('turn_complete', onTurnComplete);
-      this.once('error', onError);
-      this.once('close', onClose);
+      this.once(SESSION_EVENT.TURN_COMPLETE, onTurnComplete);
+      this.once(SESSION_EVENT.ERROR, onError);
+      this.once(SESSION_EVENT.CLOSE, onClose);
     });
   }
 

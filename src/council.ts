@@ -964,15 +964,12 @@ export class Council extends EventEmitter {
       spawnAsync('git', ['-C', dir, 'checkout', 'master'], { timeout: GIT_CMD_TIMEOUT_MS }).catch(() => {}),
     );
 
-    const { worktreesRemoved, branchesDeleted, planDeleted, reviewsDeleted } = await this._cleanup(
-      this.config.projectDir,
-      {
-        removeWorktrees: true,
-        deleteBranches: true,
-        removePlan: true,
-        removeReviews: true,
-      },
-    );
+    const { worktreesRemoved, branchesDeleted, planDeleted, reviewsDeleted } = await this._cleanup(dir, {
+      removeWorktrees: true,
+      deleteBranches: true,
+      removePlan: true,
+      removeReviews: true,
+    });
 
     // Update session status
     session.status = 'accepted';
