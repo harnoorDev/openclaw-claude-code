@@ -17,6 +17,7 @@ import { randomUUID } from 'node:crypto';
 const uuidv4 = randomUUID;
 import { cleanGeminiSchema } from './schema-cleaner.js';
 import { cacheThoughtSig } from './thought-cache.js';
+import { isGeminiModel, isClaudeModel } from '../models.js';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -113,16 +114,8 @@ export interface OpenAIResponse {
   usage?: { prompt_tokens?: number; completion_tokens?: number };
 }
 
-// ─── Model Detection ─────────────────────────────────────────────────────────
-
-export function isGeminiModel(model: string): boolean {
-  return model.toLowerCase().includes('gemini');
-}
-
-export function isClaudeModel(model: string): boolean {
-  const l = model.toLowerCase();
-  return l.includes('claude') || l.includes('opus') || l.includes('sonnet') || l.includes('haiku');
-}
+// Re-export for backward compat (tests import from here)
+export { isGeminiModel, isClaudeModel };
 
 // ─── Anthropic → OpenAI Conversion ───────────────────────────────────────────
 

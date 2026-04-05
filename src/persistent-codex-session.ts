@@ -23,9 +23,9 @@ import {
   type SessionSendOptions,
   type TurnResult,
   type CostBreakdown,
-  MODEL_ALIASES,
   getModelPricing as _getModelPricingBase,
 } from './types.js';
+import { resolveAlias } from './models.js';
 
 import { MAX_HISTORY_ITEMS, DEFAULT_HISTORY_LIMIT, SESSION_EVENT } from './constants.js';
 
@@ -281,8 +281,7 @@ export class PersistentCodexSession extends EventEmitter implements ISession {
   }
 
   resolveModel(alias: string): string {
-    if (MODEL_ALIASES[alias]) return MODEL_ALIASES[alias];
-    return alias;
+    return resolveAlias(alias);
   }
 
   pause(): void {

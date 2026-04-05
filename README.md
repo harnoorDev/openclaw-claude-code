@@ -8,7 +8,7 @@ Programmable bridge that turns coding CLIs into headless, agentic engines — pe
 
 [![npm version](https://img.shields.io/npm/v/@enderfga/openclaw-claude-code.svg)](https://www.npmjs.com/package/@enderfga/openclaw-claude-code)
 [![CI](https://github.com/Enderfga/openclaw-claude-code/actions/workflows/ci.yml/badge.svg)](https://github.com/Enderfga/openclaw-claude-code/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-229%20passed-brightgreen)](https://github.com/Enderfga/openclaw-claude-code/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-300%20passed-brightgreen)](https://github.com/Enderfga/openclaw-claude-code/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
 ## Why This Exists
@@ -174,7 +174,8 @@ graph TD
 ```
 src/
 ├── index.ts                    # Plugin entry — 27 tools + proxy route
-├── types.ts                    # Shared types, ISession interface, model pricing
+├── models.ts                   # Centralized model registry (pricing, aliases, engines)
+├── types.ts                    # Shared types, ISession interface, re-exports from models
 ├── constants.ts                # Shared constants (timeouts, limits, thresholds)
 ├── persistent-session.ts       # Claude Code engine (ISession)
 ├── persistent-codex-session.ts # Codex engine (ISession)

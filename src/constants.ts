@@ -8,8 +8,6 @@
 
 /** Token threshold that triggers the onContextHigh hook */
 export const CONTEXT_HIGH_THRESHOLD = 140_000;
-/** Assumed context window size for utilization percentage calculation */
-export const CONTEXT_WINDOW_SIZE = 200_000;
 
 // ─── History ────────────────────────────────────────────────────────────────
 
@@ -67,10 +65,10 @@ export const ULTRAREVIEW_POLL_INTERVAL_MS = 5_000;
 
 /** Default port for the embedded HTTP server */
 export const DEFAULT_SERVER_PORT = 18_796;
-/** Maximum request body size (1 MB) */
-export const MAX_BODY_SIZE = 1_048_576;
+/** Maximum request body size (5 MB) */
+export const MAX_BODY_SIZE = 5_242_880;
 /** Rate limit: max requests per window per IP */
-export const RATE_LIMIT_MAX_REQUESTS = 100;
+export const RATE_LIMIT_MAX_REQUESTS = 300;
 /** Rate limit: sliding window duration */
 export const RATE_LIMIT_WINDOW_MS = 60_000;
 

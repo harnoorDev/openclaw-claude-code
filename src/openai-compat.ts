@@ -8,7 +8,7 @@
 
 import * as http from 'node:http';
 import { randomUUID } from 'node:crypto';
-import type { EngineType } from './types.js';
+import { resolveEngineAndModel } from './models.js';
 import {
   OPENAI_COMPAT_DEFAULT_MODEL,
   OPENAI_COMPAT_AUTO_COMPACT_THRESHOLD,
@@ -60,52 +60,6 @@ export interface OpenAIChatCompletionChunk {
   }>;
 }
 
-// ─── Model → Engine Mapping ──────────────────────────────────────────────────
-
-interface EngineModelMapping {
-  engine: EngineType;
-  model: string;
-}
-
-const MODEL_ENGINE_MAP: Record<string, EngineModelMapping> = {
-  // Claude aliases
-  opus: { engine: 'claude', model: 'claude-opus-4-6' },
-  sonnet: { engine: 'claude', model: 'claude-sonnet-4-6' },
-  haiku: { engine: 'claude', model: 'claude-haiku-4-5' },
-  // OpenAI GPT-5.4 series (current flagship) → codex engine
-  'gpt-5.4': { engine: 'codex', model: 'gpt-5.4' },
-  'gpt-5.4-mini': { engine: 'codex', model: 'gpt-5.4-mini' },
-  'gpt-5.4-nano': { engine: 'codex', model: 'gpt-5.4-nano' },
-  // OpenAI o-series reasoning → codex engine
-  o3: { engine: 'codex', model: 'o3' },
-  'o4-mini': { engine: 'codex', model: 'o4-mini' },
-  'codex-mini-latest': { engine: 'codex', model: 'codex-mini-latest' },
-  // Cursor Composer models → cursor engine
-  'composer-2-fast': { engine: 'cursor', model: 'composer-2-fast' },
-  'composer-2': { engine: 'cursor', model: 'composer-2' },
-  'composer-1.5': { engine: 'cursor', model: 'composer-1.5' },
-};
-
-/**
- * Resolve an OpenAI model string to engine + model.
- * Pattern-based: gemini-* → gemini, gpt/o/codex-* → codex, composer-* → cursor, default → claude.
- * Any model string is accepted — unknown models pass through to the claude engine.
- */
-export function resolveEngineAndModel(model: string): EngineModelMapping {
-  // Exact match in map
-  const mapped = MODEL_ENGINE_MAP[model];
-  if (mapped) return mapped;
-
-  // Pattern-based detection
-  if (model.startsWith('gemini')) return { engine: 'gemini', model };
-  if (model.startsWith('gpt') || model.startsWith('o3') || model.startsWith('o4') || model.startsWith('codex'))
-    return { engine: 'codex', model };
-  if (model.startsWith('composer') || model.startsWith('cursor')) return { engine: 'cursor', model };
-
-  // Default: claude engine, pass model through
-  return { engine: 'claude', model };
-}
-
 // ─── Session Key Resolution ──────────────────────────────────────────────────
 
 /**
@@ -135,9 +89,13 @@ export interface ExtractedMessage {
 /**
  * Extract the relevant parts from an OpenAI messages array.
  * Since sessions are stateful, we only need the last user message.
- * A "new conversation" is detected when the array is short (system + user only).
+ * A "new conversation" is detected when the array is short (system + user only),
+ * or when the x-session-reset header is set.
  */
-export function extractUserMessage(messages: OpenAIChatMessage[]): ExtractedMessage {
+export function extractUserMessage(
+  messages: OpenAIChatMessage[],
+  headers?: Record<string, string | string[] | undefined>,
+): ExtractedMessage {
   if (!messages || messages.length === 0) {
     throw new Error('messages array is empty');
   }
@@ -153,7 +111,14 @@ export function extractUserMessage(messages: OpenAIChatMessage[]): ExtractedMess
   }
   const userMessage = userMessages[userMessages.length - 1].content;
 
-  // Detect new conversation: only system + first user message (no assistant turns yet)
+  // Detect new conversation:
+  // 1. Explicit reset header
+  const resetHeader = headers?.['x-session-reset'];
+  if (resetHeader === 'true' || resetHeader === '1') {
+    return { systemPrompt, userMessage, isNewConversation: true };
+  }
+
+  // 2. Only system + first user message (no assistant turns yet)
   const nonSystemMessages = messages.filter((m) => m.role !== 'system');
   const isNewConversation = nonSystemMessages.length <= 1;
 
@@ -204,28 +169,6 @@ export function formatCompletionChunk(
   };
 }
 
-// ─── Supported Models List ───────────────────────────────────────────────────
-
-export function getModelList(): { object: string; data: Array<{ id: string; object: string; owned_by: string }> } {
-  return {
-    object: 'list',
-    data: [
-      // Anthropic — strong / fast
-      { id: 'claude-opus-4-6', object: 'model', owned_by: 'anthropic' },
-      { id: 'claude-haiku-4-5', object: 'model', owned_by: 'anthropic' },
-      // OpenAI — strong / fast
-      { id: 'gpt-5.4', object: 'model', owned_by: 'openai' },
-      { id: 'gpt-5.4-mini', object: 'model', owned_by: 'openai' },
-      // Google — strong / fast
-      { id: 'gemini-3.1-pro-preview', object: 'model', owned_by: 'google' },
-      { id: 'gemini-3-flash-preview', object: 'model', owned_by: 'google' },
-      // Cursor — strong / fast
-      { id: 'composer-2', object: 'model', owned_by: 'cursor' },
-      { id: 'composer-2-fast', object: 'model', owned_by: 'cursor' },
-    ],
-  };
-}
-
 // ─── Main Handler ────────────────────────────────────────────────────────────
 
 /** SessionManager-like interface to avoid circular imports */
@@ -269,7 +212,7 @@ export async function handleChatCompletion(
 
   let extracted: ExtractedMessage;
   try {
-    extracted = extractUserMessage(request.messages);
+    extracted = extractUserMessage(request.messages, headers as Record<string, string | string[] | undefined>);
   } catch (err) {
     res.writeHead(400, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: { message: (err as Error).message, type: 'invalid_request_error' } }));
@@ -401,6 +344,11 @@ async function handleStreaming(
   // Initial chunk with role
   writeSSE(JSON.stringify(formatCompletionChunk(completionId, model, { role: 'assistant' }, null)));
 
+  // SSE keepalive heartbeat to prevent proxy/client timeouts
+  const heartbeatTimer = setInterval(() => {
+    writeSSE(':keepalive');
+  }, 15_000);
+
   try {
     await manager.sendMessage(sessionName, userMessage, {
       onChunk: (chunk: string) => {
@@ -408,13 +356,30 @@ async function handleStreaming(
       },
     });
 
-    // Final chunk with finish_reason
-    writeSSE(JSON.stringify(formatCompletionChunk(completionId, model, {}, 'stop')));
+    // Get token usage for final chunk
+    let usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number } | undefined;
+    try {
+      const status = manager.getStatus(sessionName);
+      usage = {
+        prompt_tokens: status.stats.tokensIn,
+        completion_tokens: status.stats.tokensOut,
+        total_tokens: status.stats.tokensIn + status.stats.tokensOut,
+      };
+    } catch {
+      /* best effort */
+    }
+
+    // Final chunk with finish_reason + usage
+    const finalChunk = formatCompletionChunk(completionId, model, {}, 'stop');
+    if (usage) (finalChunk as unknown as Record<string, unknown>).usage = usage;
+    writeSSE(JSON.stringify(finalChunk));
     writeSSE('[DONE]');
   } catch (err) {
     // Send error as SSE event then close
     writeSSE(JSON.stringify({ error: { message: (err as Error).message, type: 'server_error' } }));
     writeSSE('[DONE]');
+  } finally {
+    clearInterval(heartbeatTimer);
   }
 
   if (!clientDisconnected) {

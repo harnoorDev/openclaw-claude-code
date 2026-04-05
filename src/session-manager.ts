@@ -42,6 +42,7 @@ interface PersistedSession {
   claudeSessionId: string;
   cwd: string;
   model?: string;
+  engine?: EngineType;
   originalCreated: string;
   lastResumed: string;
   lastActivity: number;
@@ -136,9 +137,9 @@ import {
   type InboxMessage,
   type UltraplanResult,
   type UltrareviewResult,
-  MODEL_ALIASES,
   overrideModelPricing,
 } from './types.js';
+import { resolveAlias } from './models.js';
 import { Council } from './council.js';
 import {
   PERSIST_DISK_TTL_MS,
@@ -274,7 +275,7 @@ export class SessionManager {
     // Auto-inject proxy baseUrl for non-Claude models on the claude engine.
     // Starts a local proxy server that converts Anthropic → OpenAI format
     // and forwards to the OpenClaw gateway. Zero config required.
-    const engine: EngineType = fullConfig.engine || 'claude';
+    const engine: EngineType = fullConfig.engine || persisted?.engine || 'claude';
 
     // Circuit breaker — reject early if engine is in backoff
     this._checkCircuitBreaker(engine);
@@ -963,6 +964,7 @@ export class SessionManager {
       claudeSessionId: managed.claudeSessionId,
       cwd: managed.cwd,
       model: managed.config.resolvedModel || managed.config.model,
+      engine: managed.config.engine,
       originalCreated: existing?.originalCreated || managed.created,
       lastResumed: new Date().toISOString(),
       lastActivity: managed.lastActivity,
@@ -1111,8 +1113,7 @@ export class SessionManager {
 
   private _resolveModel(alias: string, overrides?: Record<string, string>): string {
     if (overrides?.[alias]) return overrides[alias];
-    if (MODEL_ALIASES[alias]) return MODEL_ALIASES[alias];
-    return alias;
+    return resolveAlias(alias);
   }
 
   private _listMdFiles(dir: string): AgentInfo[] {

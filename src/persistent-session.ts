@@ -22,13 +22,12 @@ import {
   type StreamCallbacks,
   type TurnResult,
   type CostBreakdown,
-  MODEL_ALIASES,
   getModelPricing,
 } from './types.js';
+import { resolveAlias, getContextWindow } from './models.js';
 
 import {
   CONTEXT_HIGH_THRESHOLD,
-  CONTEXT_WINDOW_SIZE,
   MAX_HISTORY_ITEMS,
   DEFAULT_HISTORY_LIMIT,
   SESSION_READY_TIMEOUT_MS,
@@ -624,13 +623,17 @@ export class PersistentClaudeSession extends EventEmitter implements ISession {
       isReady: this._isReady,
       startTime: this.stats.startTime,
       lastActivity: this.stats.lastActivity,
-      // Approximate: assumes a 200k-token context window.
+      // Approximate context window utilization based on model's known window size.
       // Claude Code doesn't expose exact context usage via the JSON protocol,
       // so this is a best-effort heuristic. May overcount because cumulative
       // token counts include the full conversation history replayed each turn.
       contextPercent: Math.min(
         100,
-        Math.round(((this.stats.tokensIn + this.stats.tokensOut) / CONTEXT_WINDOW_SIZE) * 100),
+        Math.round(
+          ((this.stats.tokensIn + this.stats.tokensOut) /
+            getContextWindow(this.options.resolvedModel || this.options.model || 'claude-sonnet-4-6')) *
+            100,
+        ),
       ),
       sessionId: this.sessionId,
       uptime: this.stats.startTime ? Math.round((Date.now() - new Date(this.stats.startTime).getTime()) / 1000) : 0,
@@ -673,8 +676,7 @@ export class PersistentClaudeSession extends EventEmitter implements ISession {
 
   resolveModel(alias: string): string {
     if (this.options.modelOverrides?.[alias]) return this.options.modelOverrides[alias];
-    if (MODEL_ALIASES[alias]) return MODEL_ALIASES[alias];
-    return alias;
+    return resolveAlias(alias);
   }
 
   pause(): void {

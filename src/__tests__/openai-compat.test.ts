@@ -4,14 +4,13 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  resolveEngineAndModel,
   resolveSessionKey,
   sessionNameFromKey,
   extractUserMessage,
   formatCompletionResponse,
   formatCompletionChunk,
-  getModelList,
 } from '../openai-compat.js';
+import { resolveEngineAndModel, getModelList } from '../models.js';
 import type { OpenAIChatMessage } from '../openai-compat.js';
 
 // ─── resolveEngineAndModel ───────────────────────────────────────────────────

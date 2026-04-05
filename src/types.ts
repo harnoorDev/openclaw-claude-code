@@ -2,6 +2,27 @@
  * Shared types for openclaw-claude-code plugin
  */
 
+// Re-export model types and functions from centralized registry
+import type { ModelPricing, ProviderName, ModelDef } from './models.js';
+import { getAliases } from './models.js';
+export type { ModelPricing, ProviderName, ModelDef };
+export {
+  getModelPricing,
+  overrideModelPricing,
+  _resetPricingOverrides,
+  getModelList,
+  resolveAlias,
+  resolveEngineAndModel,
+  resolveProvider,
+  getContextWindow,
+  isGeminiModel,
+  isClaudeModel,
+  getAliases,
+} from './models.js';
+
+// Backward compat: MODEL_ALIASES as a static object
+export const MODEL_ALIASES: Record<string, string> = getAliases();
+
 // ─── Permission & Effort ─────────────────────────────────────────────────────
 
 export type PermissionMode = 'acceptEdits' | 'bypassPermissions' | 'default' | 'delegate' | 'dontAsk' | 'plan' | 'auto';
@@ -282,85 +303,6 @@ export interface ProxyConfig {
   bigModel: string;
   smallModel: string;
 }
-
-// ─── Model Pricing ───────────────────────────────────────────────────────────
-
-export interface ModelPricing {
-  input: number; // per 1M tokens
-  output: number;
-  cached?: number;
-}
-
-const DEFAULT_MODEL_PRICING: Record<string, ModelPricing> = {
-  // Anthropic Claude 4.6
-  'claude-opus-4-6': { input: 5, output: 25, cached: 0.5 },
-  'claude-sonnet-4-6': { input: 3, output: 15, cached: 0.3 },
-  'claude-haiku-4-5': { input: 1, output: 5, cached: 0.1 },
-  // OpenAI GPT-5.4 series (current)
-  'gpt-5.4': { input: 2.5, output: 15, cached: 0.25 },
-  'gpt-5.4-mini': { input: 0.75, output: 4.5, cached: 0.075 },
-  'gpt-5.4-nano': { input: 0.2, output: 1.25, cached: 0.02 },
-  // OpenAI reasoning
-  o3: { input: 2, output: 8 },
-  'o4-mini': { input: 0.55, output: 2.2 },
-  'codex-mini-latest': { input: 1.5, output: 6 },
-  // Google Gemini 3.x (current)
-  'gemini-3.1-pro-preview': { input: 2, output: 12 },
-  'gemini-3-flash-preview': { input: 0.5, output: 3 },
-  // Google Gemini 2.5 (stable, still available)
-  'gemini-2.5-pro': { input: 1.25, output: 10, cached: 0.315 },
-  'gemini-2.5-flash': { input: 0.15, output: 0.6, cached: 0.0375 },
-  // Cursor Composer
-  'composer-2-fast': { input: 1.5, output: 7.5 },
-  'composer-2': { input: 0.5, output: 2.5 },
-  'composer-1.5': { input: 3.5, output: 17.5 },
-  // Legacy (kept for backward compat with existing sessions)
-  'gpt-4o': { input: 2.5, output: 10, cached: 1.25 },
-};
-
-/** Model pricing table — mutable copy of defaults, can be overridden at runtime. */
-export const MODEL_PRICING: Record<string, ModelPricing> = { ...DEFAULT_MODEL_PRICING };
-
-/**
- * Override or extend model pricing at runtime.
- * Useful when prices change without requiring a new package release.
- * Partial overrides are merged with existing values.
- */
-export function overrideModelPricing(overrides: Record<string, Partial<ModelPricing>>): void {
-  for (const [model, pricing] of Object.entries(overrides)) {
-    const existing = MODEL_PRICING[model];
-    const input = pricing.input ?? existing?.input;
-    const output = pricing.output ?? existing?.output;
-    if (input === undefined || output === undefined) {
-      console.warn(`[ModelPricing] Missing input/output pricing for new model '${model}', defaulting to 0`);
-    }
-    MODEL_PRICING[model] = {
-      input: input ?? 0,
-      output: output ?? 0,
-      cached: pricing.cached ?? existing?.cached,
-    };
-  }
-}
-
-/**
- * Look up pricing for a model key. Strips common vendor prefixes before lookup.
- * Falls back to the provided defaultModel key, or 'claude-sonnet-4-6' if not found.
- */
-export function getModelPricing(model?: string, defaultModel = 'claude-sonnet-4-6'): ModelPricing {
-  if (!model) return MODEL_PRICING[defaultModel] ?? { input: 0, output: 0 };
-  const key = model.replace(/^anthropic\/|^google\/|^openai\/|^openai-codex\/|^gemini\/|^cursor\//g, '');
-  return MODEL_PRICING[key] ?? MODEL_PRICING[defaultModel] ?? { input: 0, output: 0 };
-}
-
-// ─── Model Aliases ───────────────────────────────────────────────────────────
-
-export const MODEL_ALIASES: Record<string, string> = {
-  opus: 'claude-opus-4-6',
-  sonnet: 'claude-sonnet-4-6',
-  haiku: 'claude-haiku-4-5',
-  'gemini-flash': 'gemini-3-flash-preview',
-  'gemini-pro': 'gemini-3.1-pro-preview',
-};
 
 // ─── Inbox Types ────────────────────────────────────────────────────────────
 

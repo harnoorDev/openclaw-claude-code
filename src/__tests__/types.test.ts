@@ -1,11 +1,16 @@
 /**
- * Unit tests for shared types and constants
+ * Unit tests for shared types and model registry
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { MODEL_PRICING, MODEL_ALIASES, overrideModelPricing } from '../types.js';
+import { MODEL_ALIASES, overrideModelPricing, getModelPricing, _resetPricingOverrides } from '../types.js';
+import { lookupModel, getAliases } from '../models.js';
 
-describe('MODEL_PRICING', () => {
+beforeEach(() => {
+  _resetPricingOverrides();
+});
+
+describe('Model Pricing (via registry)', () => {
   it('contains expected models', () => {
     const expected = [
       'claude-opus-4-6',
@@ -16,19 +21,54 @@ describe('MODEL_PRICING', () => {
       'o4-mini',
     ];
     for (const model of expected) {
-      expect(MODEL_PRICING[model], `missing pricing for ${model}`).toBeDefined();
+      expect(lookupModel(model), `missing model def for ${model}`).toBeDefined();
     }
   });
 
-  it('has positive input and output prices', () => {
-    for (const [model, pricing] of Object.entries(MODEL_PRICING)) {
+  it('has positive input and output prices for all models', () => {
+    const aliases = getAliases();
+    // Check all known models via getModelPricing
+    const models = [
+      'claude-opus-4-6',
+      'claude-sonnet-4-6',
+      'claude-haiku-4-5',
+      'gpt-5.4',
+      'gpt-5.4-mini',
+      'gpt-5.4-nano',
+      'o3',
+      'o4-mini',
+      'codex-mini-latest',
+      'gemini-3.1-pro-preview',
+      'gemini-3-flash-preview',
+      'gemini-2.5-pro',
+      'gemini-2.5-flash',
+      'composer-2',
+      'composer-2-fast',
+      'composer-1.5',
+      'gpt-4o',
+      ...Object.keys(aliases),
+    ];
+    for (const model of models) {
+      const pricing = getModelPricing(model);
       expect(pricing.input, `${model} input should be positive`).toBeGreaterThan(0);
       expect(pricing.output, `${model} output should be positive`).toBeGreaterThan(0);
     }
   });
 
   it('cached is optional but positive when defined', () => {
-    for (const [model, pricing] of Object.entries(MODEL_PRICING)) {
+    const models = [
+      'claude-opus-4-6',
+      'claude-sonnet-4-6',
+      'claude-haiku-4-5',
+      'gpt-5.4',
+      'gpt-5.4-mini',
+      'gpt-5.4-nano',
+      'gemini-2.5-pro',
+      'gemini-2.5-flash',
+      'gpt-4o',
+    ];
+    for (const model of models) {
+      const pricing = getModelPricing(model);
       if (pricing.cached !== undefined) {
         expect(pricing.cached, `${model} cached should be positive`).toBeGreaterThan(0);
       }
@@ -37,43 +77,39 @@ describe('MODEL_PRICING', () => {
 });
 
 describe('overrideModelPricing', () => {
-  // Save originals so we can restore after each test
-  const originalOpus = { ...MODEL_PRICING['claude-opus-4-6'] };
-
-  beforeEach(() => {
-    // Restore original pricing after each test
-    MODEL_PRICING['claude-opus-4-6'] = { ...originalOpus };
-    delete MODEL_PRICING['custom-model-xyz'];
-  });
-
-  it('overrides existing model pricing fully', () => {
+  it('overrides existing model pricing', () => {
     overrideModelPricing({ 'claude-opus-4-6': { input: 20, output: 80, cached: 2.0 } });
-    expect(MODEL_PRICING['claude-opus-4-6']).toEqual({ input: 20, output: 80, cached: 2.0 });
+    const pricing = getModelPricing('claude-opus-4-6');
+    expect(pricing).toEqual({ input: 20, output: 80, cached: 2.0 });
   });
 
   it('partial merge keeps existing fields', () => {
     overrideModelPricing({ 'claude-opus-4-6': { input: 99 } });
-    expect(MODEL_PRICING['claude-opus-4-6'].input).toBe(99);
-    expect(MODEL_PRICING['claude-opus-4-6'].output).toBe(originalOpus.output);
-    expect(MODEL_PRICING['claude-opus-4-6'].cached).toBe(originalOpus.cached);
+    const pricing = getModelPricing('claude-opus-4-6');
+    expect(pricing.input).toBe(99);
+    // output and cached should come from the base model def
+    expect(pricing.output).toBe(25);
+    expect(pricing.cached).toBe(0.5);
   });
 
-  it('adds a new model', () => {
+  it('adds a new model override', () => {
     overrideModelPricing({ 'custom-model-xyz': { input: 5, output: 25 } });
-    expect(MODEL_PRICING['custom-model-xyz']).toEqual({ input: 5, output: 25, cached: undefined });
+    const pricing = getModelPricing('custom-model-xyz');
+    expect(pricing.input).toBe(5);
+    expect(pricing.output).toBe(25);
   });
 
-  it('values are visible to consumers reading MODEL_PRICING', () => {
+  it('overridden values are visible to getModelPricing', () => {
     overrideModelPricing({ 'claude-opus-4-6': { input: 42 } });
-    const pricing = MODEL_PRICING['claude-opus-4-6'];
+    const pricing = getModelPricing('claude-opus-4-6');
     expect(pricing.input).toBe(42);
   });
 });
 
 describe('MODEL_ALIASES', () => {
-  it('all aliases resolve to a model in MODEL_PRICING', () => {
+  it('all aliases resolve to a known model', () => {
     for (const [alias, model] of Object.entries(MODEL_ALIASES)) {
-      expect(MODEL_PRICING[model], `alias '${alias}' -> '${model}' not in MODEL_PRICING`).toBeDefined();
+      expect(lookupModel(model), `alias '${alias}' -> '${model}' not found`).toBeDefined();
     }
   });
 

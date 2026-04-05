@@ -14,7 +14,8 @@ import * as os from 'node:os';
 import { SessionManager } from './session-manager.js';
 import { sanitizeCwd, validateRegex } from './validation.js';
 import type { EffortLevel } from './types.js';
-import { handleChatCompletion, getModelList } from './openai-compat.js';
+import { handleChatCompletion } from './openai-compat.js';
+import { getModelList } from './models.js';
 
 import { DEFAULT_SERVER_PORT, MAX_BODY_SIZE, RATE_LIMIT_MAX_REQUESTS, RATE_LIMIT_WINDOW_MS } from './constants.js';
 
@@ -25,10 +26,12 @@ export class EmbeddedServer {
   private authToken: string | null = null;
   private _rateWindows = new Map<string, number[]>();
   private _rateLimitCleanupTimer: ReturnType<typeof setInterval> | null = null;
+  private _rateLimit: number;
 
   constructor(manager: SessionManager, port?: number) {
     this.manager = manager;
     this.port = port || DEFAULT_SERVER_PORT;
+    this._rateLimit = parseInt(process.env.OPENCLAW_RATE_LIMIT || '', 10) || RATE_LIMIT_MAX_REQUESTS;
   }
 
   private _checkRateLimit(ip: string): boolean {
@@ -37,7 +40,7 @@ export class EmbeddedServer {
     const recent = window.filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
     recent.push(now);
     this._rateWindows.set(ip, recent);
-    return recent.length <= RATE_LIMIT_MAX_REQUESTS;
+    return recent.length <= this._rateLimit;
   }
 
   async start(): Promise<number> {
@@ -359,10 +362,21 @@ export class EmbeddedServer {
         return;
       }
 
-      json(404, { ok: false, error: 'Not found' });
+      // Use OpenAI error format for /v1/* paths
+      if (path.startsWith('/v1/')) {
+        json(404, { error: { message: 'Not found', type: 'invalid_request_error', code: null } });
+      } else {
+        json(404, { ok: false, error: 'Not found' });
+      }
     } catch (err) {
-      res.writeHead(500, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ ok: false, error: (err as Error).message }));
+      const message = (err as Error).message;
+      if (path.startsWith('/v1/')) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: { message, type: 'server_error', code: null } }));
+      } else {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: message }));
+      }
     }
   }
 }

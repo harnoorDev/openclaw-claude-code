@@ -961,18 +961,15 @@ describe('SessionManager', () => {
 
     it('applies pricing overrides', async () => {
       // This is tested indirectly — if pricingOverrides is passed,
-      // overrideModelPricing should be called. We test the effect:
-      const { MODEL_PRICING } = await import('../types.js');
-      const beforeInput = MODEL_PRICING['claude-opus-4-6']?.input;
+      // overrideModelPricing should be called. We test the effect via getModelPricing:
+      const { getModelPricing } = await import('../types.js');
 
       const overrideMgr = createManager({
         pricingOverrides: { 'claude-opus-4-6': { input: 999 } },
       });
 
-      expect(MODEL_PRICING['claude-opus-4-6'].input).toBe(999);
+      expect(getModelPricing('claude-opus-4-6').input).toBe(999);
 
-      // Restore
-      MODEL_PRICING['claude-opus-4-6'].input = beforeInput;
       await overrideMgr.shutdown();
     });
   });

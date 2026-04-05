@@ -22,12 +22,40 @@ import {
 } from './anthropic-adapter.js';
 import { injectThoughtSigs } from './thought-cache.js';
 import type { ProxyConfig } from '../types.js';
+import { resolveProvider } from '../models.js';
 
 import { FETCH_TIMEOUT_MS } from '../constants.js';
 
 /** Create an AbortSignal that fires after the given timeout */
 function fetchSignal(ms = FETCH_TIMEOUT_MS): AbortSignal {
   return AbortSignal.timeout(ms);
+}
+
+// ─── Retry Logic ────────────────────────────────────────────────────────────
+
+const RETRY_STATUS_CODES = new Set([429, 500, 502, 503, 504]);
+const MAX_RETRIES = 2;
+const RETRY_BASE_DELAY_MS = 1_000;
+
+async function fetchWithRetry(url: string, init: RequestInit, maxRetries = MAX_RETRIES): Promise<Response> {
+  let lastError: Error | null = null;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const resp = await fetch(url, init);
+      if (!RETRY_STATUS_CODES.has(resp.status) || attempt === maxRetries) return resp;
+      // Check Retry-After header
+      const retryAfter = resp.headers.get('retry-after');
+      const delayMs = retryAfter
+        ? Math.min(parseInt(retryAfter, 10) * 1000 || RETRY_BASE_DELAY_MS, 30_000)
+        : RETRY_BASE_DELAY_MS * Math.pow(2, attempt);
+      await new Promise((r) => setTimeout(r, delayMs));
+    } catch (err) {
+      lastError = err as Error;
+      if (attempt === maxRetries) throw lastError;
+      await new Promise((r) => setTimeout(r, RETRY_BASE_DELAY_MS * Math.pow(2, attempt)));
+    }
+  }
+  throw lastError || new Error('Fetch failed after retries');
 }
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -56,34 +84,6 @@ interface HttpResponse {
   write(data: string): void;
   end(): void;
   flushHeaders?(): void;
-}
-
-// ─── Model Routing ───────────────────────────────────────────────────────────
-
-function resolveProviderModel(model: string): { provider: string; apiModel: string } {
-  const lower = model.toLowerCase();
-
-  // Strip prefixes
-  let clean = model;
-  for (const prefix of ['anthropic/', 'openai/', 'gemini/', 'google/']) {
-    if (clean.startsWith(prefix)) {
-      clean = clean.slice(prefix.length);
-      break;
-    }
-  }
-
-  if (lower.includes('claude') || lower.includes('opus') || lower.includes('sonnet') || lower.includes('haiku')) {
-    return { provider: 'anthropic', apiModel: clean };
-  }
-  if (lower.includes('gemini')) {
-    return { provider: 'gemini', apiModel: clean };
-  }
-  if (lower.includes('gpt') || lower.includes('o1') || lower.includes('o3')) {
-    return { provider: 'openai', apiModel: clean };
-  }
-
-  // Default: treat as OpenAI-compatible
-  return { provider: 'openai', apiModel: clean };
 }
 
 // ─── Extract Real Model from URL ─────────────────────────────────────────────
@@ -120,7 +120,7 @@ export function createProxyHandler(config: ProxyConfig | undefined, env: ProxyEn
       const requestModel = urlModel || body.model;
       body.model = requestModel;
 
-      const { provider, apiModel } = resolveProviderModel(requestModel);
+      const { provider, apiModel } = resolveProvider(requestModel);
       const isStream = body.stream ?? false;
 
       // ─── Direct Anthropic passthrough ─────────────────────────────
@@ -141,14 +141,14 @@ export function createProxyHandler(config: ProxyConfig | undefined, env: ProxyEn
       openaiReq.model = apiModel;
 
       // Inject thought signatures for Gemini round-trip
-      if (provider === 'gemini') {
+      if (provider === 'google') {
         injectThoughtSigs(openaiReq.messages as unknown as Array<Record<string, unknown>>);
       }
 
       // Determine API endpoint and key
       let apiUrl: string;
       let apiKey: string;
-      if (provider === 'gemini') {
+      if (provider === 'google') {
         apiUrl = 'https://generativelanguage.googleapis.com/v1beta/chat/completions';
         apiKey = env.geminiApiKey || '';
       } else {
@@ -192,7 +192,7 @@ async function forwardToAnthropic(
     return true;
   }
 
-  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+  const fetchInit: RequestInit = {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -201,9 +201,10 @@ async function forwardToAnthropic(
     },
     body: JSON.stringify(body),
     signal: fetchSignal(),
-  });
+  };
 
   if (isStream) {
+    const resp = await fetch('https://api.anthropic.com/v1/messages', fetchInit);
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.flushHeaders?.();
@@ -222,6 +223,7 @@ async function forwardToAnthropic(
     }
     res.end();
   } else {
+    const resp = await fetchWithRetry('https://api.anthropic.com/v1/messages', fetchInit);
     const data = await resp.json();
     res.status(resp.status).json(data);
   }
@@ -245,7 +247,7 @@ async function forwardToGateway(
   // Inject thought signatures for Gemini
   injectThoughtSigs(openaiReq.messages as unknown as Array<Record<string, unknown>>);
 
-  const resp = await fetch(`${env.gatewayUrl}/chat/completions`, {
+  const gatewayInit: RequestInit = {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -254,18 +256,19 @@ async function forwardToGateway(
     },
     body: JSON.stringify(openaiReq),
     signal: fetchSignal(),
-  });
-
-  if (!resp.ok) {
-    const err = await resp.text();
-    console.error('[proxy] Gateway error:', resp.status, err);
-    res
-      .status(resp.status)
-      .json({ type: 'error', error: { type: 'gateway_error', message: 'Upstream gateway error' } });
-    return true;
-  }
+  };
 
   if (isStream) {
+    const resp = await fetch(`${env.gatewayUrl}/chat/completions`, gatewayInit);
+
+    if (!resp.ok) {
+      const err = await resp.text();
+      console.error('[proxy] Gateway error:', resp.status, err);
+      res
+        .status(resp.status)
+        .json({ type: 'error', error: { type: 'gateway_error', message: 'Upstream gateway error' } });
+      return true;
+    }
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.flushHeaders?.();
@@ -286,6 +289,17 @@ async function forwardToGateway(
     }
     res.end();
   } else {
+    const resp = await fetchWithRetry(`${env.gatewayUrl}/chat/completions`, gatewayInit);
+
+    if (!resp.ok) {
+      const err = await resp.text();
+      console.error('[proxy] Gateway error:', resp.status, err);
+      res
+        .status(resp.status)
+        .json({ type: 'error', error: { type: 'gateway_error', message: 'Upstream gateway error' } });
+      return true;
+    }
+
     const data = (await resp.json()) as OpenAIResponse;
     const anthropicResp = convertOpenAIToAnthropic(data, originalModel);
     res.status(200).json(anthropicResp);
@@ -302,7 +316,7 @@ async function handleNonStreamingResponse(
   res: HttpResponse,
   originalModel: string,
 ): Promise<boolean> {
-  const resp = await fetch(apiUrl, {
+  const resp = await fetchWithRetry(apiUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -359,12 +373,21 @@ async function handleStreamingResponse(
     return true;
   }
 
+  const heartbeat = setInterval(() => {
+    try {
+      res.write(':keepalive\n\n');
+    } catch {
+      /* client gone */
+    }
+  }, 15_000);
+
   try {
     const lineStream = readSSELines(reader);
     for await (const sseChunk of convertStreamOpenAIToAnthropic(lineStream, originalModel)) {
       res.write(sseChunk);
     }
   } finally {
+    clearInterval(heartbeat);
     reader.cancel().catch(() => {});
   }
   res.end();
