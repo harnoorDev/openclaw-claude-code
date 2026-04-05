@@ -139,7 +139,7 @@ import {
   type UltrareviewResult,
   overrideModelPricing,
 } from './types.js';
-import { resolveAlias } from './models.js';
+import { resolveAlias, isClaudeModel } from './models.js';
 import { Council } from './council.js';
 import {
   PERSIST_DISK_TTL_MS,
@@ -281,11 +281,7 @@ export class SessionManager {
     this._checkCircuitBreaker(engine);
 
     if (engine === 'claude' && fullConfig.resolvedModel && !fullConfig.baseUrl) {
-      const CLAUDE_PATTERNS = ['sonnet', 'opus', 'haiku', 'claude-', 'anthropic/', '/claude'];
-      const isClaudeModel = CLAUDE_PATTERNS.some(
-        (p) => fullConfig.resolvedModel!.includes(p) || fullConfig.resolvedModel!.startsWith(p),
-      );
-      if (!isClaudeModel) {
+      if (!isClaudeModel(fullConfig.resolvedModel!)) {
         const proxyPort = await this._ensureProxyServer();
         if (proxyPort) {
           fullConfig.baseUrl = `http://127.0.0.1:${proxyPort}`;
@@ -1175,6 +1171,15 @@ export class SessionManager {
     if (existing) clearTimeout(existing);
 
     const timer = setTimeout(() => {
+      // Abort if still running to prevent orphaned background tasks
+      const council = this.councils.get(id);
+      if (council) {
+        const session = council.getSession();
+        if (session?.status === 'running') {
+          console.log(`[SessionManager] Council ${id} still running at TTL expiry — aborting`);
+          council.abort();
+        }
+      }
       this.councils.delete(id);
       this.councilCleanupTimers.delete(id);
     }, RESULT_TTL_MS);
@@ -1356,7 +1361,17 @@ export class SessionManager {
         this.stopSession(sessionName).catch((err) => {
           console.error(`[SessionManager] Failed to stop ultraplan session '${sessionName}':`, err);
         });
-        setTimeout(() => this.ultraplans.delete(id), RESULT_TTL_MS);
+        setTimeout(() => {
+          // Mark as error if still running at TTL expiry
+          const plan = this.ultraplans.get(id);
+          if (plan?.status === 'running') {
+            console.log(`[SessionManager] Ultraplan ${id} still running at TTL expiry — marking as error`);
+            plan.status = 'error';
+            plan.error = 'Timed out (TTL expired)';
+            plan.endTime = new Date().toISOString();
+          }
+          this.ultraplans.delete(id);
+        }, RESULT_TTL_MS);
       });
 
     return result;
